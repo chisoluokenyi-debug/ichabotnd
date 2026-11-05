@@ -9,80 +9,29 @@ const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const APP_SECRET = process.env.APP_SECRET;
 
+// Support multiple Facebook Page tokens
+function getPageTokens() {
+    try {
+        return JSON.parse(process.env.PAGE_TOKENS_JSON || "{}");
+    } catch (error) {
+        console.error("Invalid PAGE_TOKENS_JSON");
+        return {};
+    }
+}
+
+// Serve dashboard files
+app.use(express.static(path.join(__dirname, "public")));
+
+// Capture original request body for signature verification
 app.use(express.json({
-    verify: (req, res, buf) => {
-        req.rawBody = buf;
+    verify: (req, res, buffer) => {
+        req.rawBody = buffer;
     }
 }));
 
-// Dashboard homepage
+// Dashboard
 app.get("/", (req, res) => {
-    res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>IchaBot Professional</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body {
-                margin: 0;
-                background: #101827;
-                color: white;
-                font-family: Arial, sans-serif;
-            }
-            header {
-                background: #17243a;
-                padding: 22px;
-                font-size: 25px;
-                font-weight: bold;
-            }
-            main {
-                padding: 25px;
-                max-width: 900px;
-                margin: auto;
-            }
-            .card {
-                background: #1d2b43;
-                padding: 22px;
-                border-radius: 12px;
-                margin: 15px 0;
-            }
-            .status {
-                color: #22c55e;
-                font-weight: bold;
-            }
-        </style>
-    </head>
-    <body>
-        <header>IchaBot</header>
-        <main>
-            <h1>Professional Dashboard</h1>
-            <p>Manage your Facebook Messenger automation.</p>
-
-            <div class="card">
-                <h3>System Status</h3>
-                <p class="status">● Server Online</p>
-            </div>
-
-            <div class="card">
-                <h3>Facebook Pages</h3>
-                <p>Multi-page management setup</p>
-                <p>Coming in the next setup stage.</p>
-            </div>
-
-            <div class="card">
-                <h3>Messenger Automation</h3>
-                <p>Webhook service ready for configuration.</p>
-            </div>
-
-            <div class="card">
-                <h3>Comment Automation</h3>
-                <p>Comment management setup coming next.</p>
-            </div>
-        </main>
-    </body>
-    </html>
-    `);
+    res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // Health check
@@ -107,16 +56,15 @@ app.get("/webhook", (req, res) => {
     return res.sendStatus(403);
 });
 
-// Verify Meta webhook signature
+// Verify Facebook webhook signature
 function verifySignature(req) {
-    if (!APP_SECRET) {
-        console.error("Missing APP_SECRET");
+    if (!APP_SECRET || !req.rawBody) {
         return false;
     }
 
     const signature = req.headers["x-hub-signature-256"];
 
-    if (!signature || !req.rawBody) {
+    if (!signature) {
         return false;
     }
 
@@ -132,192 +80,55 @@ function verifySignature(req) {
         crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
 }
 
-// Receive Facebook webhook events
-app.post("/webhook", async (req, res) => {
-    if (!verifySignature(req)) {
-        console.error("Invalid webhook signature");
-        return res.sendStatus(401);
+// Send Messenger reply
+async function sendMessage(pageId, userId, message) {
+    const tokens = getPageTokens();
+
+    const pageToken =
+        tokens[pageId] || process.env.PAGE_ACCESS_TOKEN;
+
+    if (!pageToken) {
+        console.error("No token configured for Page:", pageId);
+        return;
     }
-
-    res.sendStatus(200);
-
-    console.log("Facebook webhook received");
 
     try {
-        const body = req.body;
-
-        if (body.object !== "page") {
-            return;
-        }
-
-        for (const entry of body.entry || []) {
-            for (const event of entry.messaging || []) {
-                if (event.message && !event.message.is_echo) {
-                    console.log("Incoming Messenger message");
-
-                    const senderId = event.sender.id;
-                    const message = event.message.text || "";
-
-                    if (message) {
-                        console.log("Message:", message);
-
-                        // Multi-page token routing will be added
-                        // after the Page connection system is ready.
-                    }
+        await axios.post(
+            "https://graph.facebook.com/v23.0/me/messages",
+            {
+                recipient: {
+                    id: userId
+                },
+                message: {
+                    text: message
+                }
+            },
+            {
+                params: {
+                    access_token: pageToken
                 }
             }
-        }
+        );
+
+        console.log("Messenger reply sent successfully");
+
     } catch (error) {
-        console.error("Webhook processing error:", error.message);
+        console.error(
+            "Messenger error:",
+            error.response?.data || error.message
+        );
     }
-});
-
-// Start server
-app.listen(PORT, () => {
-    console.log("IchaBot Professional running on port " + PORT);
-});
-
-const express = require("express");
-const axios = require("axios");
-const path = require("path");
-const crypto = require("crypto");
-
-const app = express();
-
-const PORT = process.env.PORT || 3000;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const APP_SECRET = process.env.APP_SECRET;
-
-app.use(express.json({
-    verify: (req, res, buf) => {
-        req.rawBody = buf;
-    }
-}));
-
-// Dashboard homepage
-app.get("/", (req, res) => {
-    res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>IchaBot Professional</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body {
-                margin: 0;
-                background: #101827;
-                color: white;
-                font-family: Arial, sans-serif;
-            }
-            header {
-                background: #17243a;
-                padding: 22px;
-                font-size: 25px;
-                font-weight: bold;
-            }
-            main {
-                padding: 25px;
-                max-width: 900px;
-                margin: auto;
-            }
-            .card {
-                background: #1d2b43;
-                padding: 22px;
-                border-radius: 12px;
-                margin: 15px 0;
-            }
-            .status {
-                color: #22c55e;
-                font-weight: bold;
-            }
-        </style>
-    </head>
-    <body>
-        <header>IchaBot</header>
-        <main>
-            <h1>Professional Dashboard</h1>
-            <p>Manage your Facebook Messenger automation.</p>
-
-            <div class="card">
-                <h3>System Status</h3>
-                <p class="status">● Server Online</p>
-            </div>
-
-            <div class="card">
-                <h3>Facebook Pages</h3>
-                <p>Multi-page management setup</p>
-                <p>Coming in the next setup stage.</p>
-            </div>
-
-            <div class="card">
-                <h3>Messenger Automation</h3>
-                <p>Webhook service ready for configuration.</p>
-            </div>
-
-            <div class="card">
-                <h3>Comment Automation</h3>
-                <p>Comment management setup coming next.</p>
-            </div>
-        </main>
-    </body>
-    </html>
-    `);
-});
-
-// Health check
-app.get("/health", (req, res) => {
-    res.json({
-        status: "online",
-        application: "IchaBot Professional"
-    });
-});
-
-// Facebook webhook verification
-app.get("/webhook", (req, res) => {
-    const mode = req.query["hub.mode"];
-    const token = req.query["hub.verify_token"];
-    const challenge = req.query["hub.challenge"];
-
-    if (mode === "subscribe" && token === VERIFY_TOKEN) {
-        console.log("Facebook webhook verified");
-        return res.status(200).send(challenge);
-    }
-
-    return res.sendStatus(403);
-});
-
-// Verify Meta webhook signature
-function verifySignature(req) {
-    if (!APP_SECRET) {
-        console.error("Missing APP_SECRET");
-        return false;
-    }
-
-    const signature = req.headers["x-hub-signature-256"];
-
-    if (!signature || !req.rawBody) {
-        return false;
-    }
-
-    const expected = "sha256=" + crypto
-        .createHmac("sha256", APP_SECRET)
-        .update(req.rawBody)
-        .digest("hex");
-
-    const receivedBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expected);
-
-    return receivedBuffer.length === expectedBuffer.length &&
-        crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
 }
 
 // Receive Facebook webhook events
 app.post("/webhook", async (req, res) => {
+
     if (!verifySignature(req)) {
-        console.error("Invalid webhook signature");
+        console.error("Webhook signature verification failed");
         return res.sendStatus(401);
     }
 
+    // Respond immediately to Facebook
     res.sendStatus(200);
 
     console.log("Facebook webhook received");
@@ -330,207 +141,48 @@ app.post("/webhook", async (req, res) => {
         }
 
         for (const entry of body.entry || []) {
+
+            const pageId = entry.id;
+
             for (const event of entry.messaging || []) {
-                if (event.message && !event.message.is_echo) {
-                    console.log("Incoming Messenger message");
 
+                if (
+                    event.message &&
+                    !event.message.is_echo
+                ) {
                     const senderId = event.sender.id;
-                    const message = event.message.text || "";
+                    const message =
+                        (event.message.text || "").trim();
 
-                    if (message) {
-                        console.log("Message:", message);
+                    console.log("Incoming message:", message);
 
-                        // Multi-page token routing will be added
-                        // after the Page connection system is ready.
+                    if (!message) {
+                        continue;
                     }
+
+                    const reply =
+                        "Welcome to IchaBot! Thanks for contacting us. How can we help you?";
+
+                    await sendMessage(
+                        pageId,
+                        senderId,
+                        reply
+                    );
                 }
             }
         }
+
     } catch (error) {
-        console.error("Webhook processing error:", error.message);
+        console.error(
+            "Webhook processing error:",
+            error.message
+        );
     }
 });
 
-// Start server
+// Start application
 app.listen(PORT, () => {
-    console.log("IchaBot Professional running on port " + PORT);
-});
-
-const express = require("express");
-const axios = require("axios");
-const path = require("path");
-const crypto = require("crypto");
-
-const app = express();
-
-const PORT = process.env.PORT || 3000;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const APP_SECRET = process.env.APP_SECRET;
-
-app.use(express.json({
-    verify: (req, res, buf) => {
-        req.rawBody = buf;
-    }
-}));
-
-// Dashboard homepage
-app.get("/", (req, res) => {
-    res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>IchaBot Professional</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body {
-                margin: 0;
-                background: #101827;
-                color: white;
-                font-family: Arial, sans-serif;
-            }
-            header {
-                background: #17243a;
-                padding: 22px;
-                font-size: 25px;
-                font-weight: bold;
-            }
-            main {
-                padding: 25px;
-                max-width: 900px;
-                margin: auto;
-            }
-            .card {
-                background: #1d2b43;
-                padding: 22px;
-                border-radius: 12px;
-                margin: 15px 0;
-            }
-            .status {
-                color: #22c55e;
-                font-weight: bold;
-            }
-        </style>
-    </head>
-    <body>
-        <header>IchaBot</header>
-        <main>
-            <h1>Professional Dashboard</h1>
-            <p>Manage your Facebook Messenger automation.</p>
-
-            <div class="card">
-                <h3>System Status</h3>
-                <p class="status">● Server Online</p>
-            </div>
-
-            <div class="card">
-                <h3>Facebook Pages</h3>
-                <p>Multi-page management setup</p>
-                <p>Coming in the next setup stage.</p>
-            </div>
-
-            <div class="card">
-                <h3>Messenger Automation</h3>
-                <p>Webhook service ready for configuration.</p>
-            </div>
-
-            <div class="card">
-                <h3>Comment Automation</h3>
-                <p>Comment management setup coming next.</p>
-            </div>
-        </main>
-    </body>
-    </html>
-    `);
-});
-
-// Health check
-app.get("/health", (req, res) => {
-    res.json({
-        status: "online",
-        application: "IchaBot Professional"
-    });
-});
-
-// Facebook webhook verification
-app.get("/webhook", (req, res) => {
-    const mode = req.query["hub.mode"];
-    const token = req.query["hub.verify_token"];
-    const challenge = req.query["hub.challenge"];
-
-    if (mode === "subscribe" && token === VERIFY_TOKEN) {
-        console.log("Facebook webhook verified");
-        return res.status(200).send(challenge);
-    }
-
-    return res.sendStatus(403);
-});
-
-// Verify Meta webhook signature
-function verifySignature(req) {
-    if (!APP_SECRET) {
-        console.error("Missing APP_SECRET");
-        return false;
-    }
-
-    const signature = req.headers["x-hub-signature-256"];
-
-    if (!signature || !req.rawBody) {
-        return false;
-    }
-
-    const expected = "sha256=" + crypto
-        .createHmac("sha256", APP_SECRET)
-        .update(req.rawBody)
-        .digest("hex");
-
-    const receivedBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expected);
-
-    return receivedBuffer.length === expectedBuffer.length &&
-        crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
-}
-
-// Receive Facebook webhook events
-app.post("/webhook", async (req, res) => {
-    if (!verifySignature(req)) {
-        console.error("Invalid webhook signature");
-        return res.sendStatus(401);
-    }
-
-    res.sendStatus(200);
-
-    console.log("Facebook webhook received");
-
-    try {
-        const body = req.body;
-
-        if (body.object !== "page") {
-            return;
-        }
-
-        for (const entry of body.entry || []) {
-            for (const event of entry.messaging || []) {
-                if (event.message && !event.message.is_echo) {
-                    console.log("Incoming Messenger message");
-
-                    const senderId = event.sender.id;
-                    const message = event.message.text || "";
-
-                    if (message) {
-                        console.log("Message:", message);
-
-                        // Multi-page token routing will be added
-                        // after the Page connection system is ready.
-                    }
-                }
-            }
-        }
-    } catch (error) {
-        console.error("Webhook processing error:", error.message);
-    }
-});
-
-// Start server
-app.listen(PORT, () => {
-    console.log("IchaBot Professional running on port " + PORT);
+    console.log(
+        "IchaBot Professional running on port " + PORT
+    );
 });
