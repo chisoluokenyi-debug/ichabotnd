@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const APP_SECRET = process.env.APP_SECRET;
 
-// Support multiple Facebook Page tokens
+// Get Facebook Page access tokens
 function getPageTokens() {
     try {
         return JSON.parse(process.env.PAGE_TOKENS_JSON || "{}");
@@ -22,7 +22,7 @@ function getPageTokens() {
 // Serve dashboard files
 app.use(express.static(path.join(__dirname, "public")));
 
-// Capture original request body for signature verification
+// Capture original request body
 app.use(express.json({
     verify: (req, res, buffer) => {
         req.rawBody = buffer;
@@ -128,7 +128,6 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(401);
     }
 
-    // Respond immediately to Facebook
     res.sendStatus(200);
 
     console.log("Facebook webhook received");
@@ -141,15 +140,11 @@ app.post("/webhook", async (req, res) => {
         }
 
         for (const entry of body.entry || []) {
-
             const pageId = entry.id;
 
             for (const event of entry.messaging || []) {
 
-                if (
-                    event.message &&
-                    !event.message.is_echo
-                ) {
+                if (event.message && !event.message.is_echo) {
                     const senderId = event.sender.id;
                     const message =
                         (event.message.text || "").trim();
