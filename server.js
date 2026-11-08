@@ -189,10 +189,10 @@ async function initDatabase() {
       WHERE table_schema = current_schema()
         AND table_name = 'broadcasts'
         AND column_name = 'schedule_at'
-    ) AS exists
+    ) AS has_legacy_schedule_at
   `);
 
-  if (legacyScheduleColumn.rows[0].exists) {
+  if (legacyScheduleColumn.rows[0].has_legacy_schedule_at) {
     await pool.query(`
       UPDATE broadcasts
       SET scheduled_at = schedule_at
