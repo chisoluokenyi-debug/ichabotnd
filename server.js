@@ -182,22 +182,23 @@ async function initDatabase() {
     ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ
   `);
 
-  await pool.query(`
-    DO $
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = current_schema()
-          AND table_name = 'broadcasts'
-          AND column_name = 'schedule_at'
-      ) THEN
-        EXECUTE 'UPDATE broadcasts
-                 SET scheduled_at = schedule_at
-                 WHERE scheduled_at IS NULL';
-      END IF;
-    END
-    $;
+  const legacyScheduleColumn = await pool.query(`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = 'broadcasts'
+        AND column_name = 'schedule_at'
+    ) AS exists
   `);
+
+  if (legacyScheduleColumn.rows[0].exists) {
+    await pool.query(`
+      UPDATE broadcasts
+      SET scheduled_at = schedule_at
+      WHERE scheduled_at IS NULL
+    `);
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS processed_events (
