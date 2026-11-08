@@ -1,860 +1,1247 @@
-"use strict";
+require("dotenv").config();
 
 const express = require("express");
 const axios = require("axios");
-const crypto = require("crypto");
 const path = require("path");
+const crypto = require("crypto");
+const session = require("express-session");
+const PgSession = require("connect-pg-simple")(session);
+const helmet = require("helmet");
 const { Pool } = require("pg");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const BASE_URL = process.env.APP_BASE_URL || "https://ichabotnd.onrender.com";
-const GRAPH = process.env.META_GRAPH_VERSION;
 
-const APP_ID = process.env.META_APP_ID;
-const APP_SECRET = process.env.META_APP_SECRET;
-const LOGIN_CONFIG_ID = process.env.META_LOGIN_CONFIG_ID;
+const APP_BASE_URL = (
+  process.env.APP_BASE_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  "https://ichabotnd.onrender.com"
+).replace(/\/+$/, "");
+
+const META_APP_ID = process.env.META_APP_ID;
+const META_APP_SECRET = process.env.META_APP_SECRET;
+const META_LOGIN_CONFIG_ID = process.env.META_LOGIN_CONFIG_ID;
 const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN;
 const SESSION_SECRET = process.env.SESSION_SECRET;
-const ENCRYPTION_KEY = process.env.TOKEN_ENCRYPTION_KEY;
 
-if (!process.env.DATABASE_URL || !SESSION_SECRET ||
-    SESSION_SECRET.length < 32 || !VERIFY_TOKEN ||
-    !APP_SECRET || !APP_ID || !LOGIN_CONFIG_ID ||
-    !GRAPH || !/^[a-fA-F0-9]{64}$/.test(ENCRYPTION_KEY || "")) {
-  console.error("Missing or invalid required environment variables.");
-  process.exit(1);
+let GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v25.0";
+GRAPH_VERSION = GRAPH_VERSION.replace(/^\/+|\/+$/g, "");
+if (!GRAPH_VERSION.startsWith("v")) GRAPH_VERSION = `v${GRAPH_VERSION}`;
+
+const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+
+if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is missing.");
+if (!META_APP_ID || !META_APP_SECRET) throw new Error("META_APP_ID or META_APP_SECRET is missing.");
+if (!META_LOGIN_CONFIG_ID) throw new Error("META_LOGIN_CONFIG_ID is missing.");
+if (!VERIFY_TOKEN) throw new Error("META_WEBHOOK_VERIFY_TOKEN is missing.");
+if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
+  throw new Error("SESSION_SECRET must be at least 32 characters.");
 }
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_SSL === "true"
     ? { rejectUnauthorized: false }
-    : false
+    : undefined
 });
 
-app.disable("x-powered-by");
+pool.on("error", (error) => {
+  console.error("Database error:", error.message);
+});
+
+/* TOKEN ENCRYPTION */
+
+const encryptionSecret =
+  process.env.TOKEN_ENCRYPTION_KEY || SESSION_SECRET;
+
+const ENCRYPTION_KEY = /^[a-fA-F0-9]{64}$/.test(encryptionSecret)
+  ? Buffer.from(encryptionSecret, "hex")
+  : crypto.createHash("sha256").update(encryptionSecret).digest();
+
+function encryptToken(token) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([
+    cipher.update(token, "utf8"),
+    cipher.final()
+  ]);
+
+  return [
+    iv.toString("hex"),
+    cipher.getAuthTag().toString("hex"),
+    encrypted.toString("hex")
+  ].join(":");
+}
+
+function decryptToken(value) {
+  const parts = String(value || "").split(":");
+  if (parts.length !== 3) throw new Error("Invalid encrypted Page token.");
+
+  const [ivHex, tagHex, encryptedHex] = parts;
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    ENCRYPTION_KEY,
+    Buffer.from(ivHex, "hex")
+  );
+
+  decipher.setAuthTag(Buffer.from(tagHex, "hex"));
+
+  return Buffer.concat([
+    decipher.update(Buffer.from(encryptedHex, "hex")),
+    decipher.final()
+  ]).toString("utf8");
+}
+
+/* DATABASE */
+
+async function initDatabase() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id BIGSERIAL PRIMARY KEY,
+      facebook_id TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pages (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      page_id TEXT NOT NULL,
+      page_name TEXT NOT NULL,
+      encrypted_token TEXT NOT NULL,
+      connected_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(user_id, page_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS settings (
+      page_id TEXT PRIMARY KEY,
+      welcome_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      welcome_message TEXT NOT NULL DEFAULT
+        'Hello! Thanks for messaging us. How can we help you today?',
+      default_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      default_reply TEXT NOT NULL DEFAULT
+        'Thanks for your message. We will get back to you shortly.',
+      comment_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      comment_reply TEXT NOT NULL DEFAULT
+        'Thanks for your comment! We have sent you a private message.',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS contacts (
+      page_id TEXT NOT NULL,
+      psid TEXT NOT NULL,
+      last_interaction TIMESTAMPTZ DEFAULT NOW(),
+      first_message BOOLEAN NOT NULL DEFAULT TRUE,
+      welcome_claimed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY(page_id, psid)
+    )
+  `);
+
+  await pool.query(`
+    ALTER TABLE contacts
+    ADD COLUMN IF NOT EXISTS first_message BOOLEAN NOT NULL DEFAULT TRUE
+  `);
+
+  await pool.query(`
+    ALTER TABLE contacts
+    ADD COLUMN IF NOT EXISTS welcome_claimed_at TIMESTAMPTZ
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS broadcasts (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      page_id TEXT NOT NULL,
+      message TEXT NOT NULL,
+      scheduled_at TIMESTAMPTZ,
+      status TEXT NOT NULL DEFAULT 'scheduled',
+      sent_count INTEGER NOT NULL DEFAULT 0,
+      failed_count INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    ALTER TABLE broadcasts
+    ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS processed_events (
+      event_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'processing',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    ALTER TABLE processed_events
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'processing'
+  `);
+
+  await pool.query(`
+    ALTER TABLE processed_events
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS contacts_activity_idx
+    ON contacts(page_id, last_interaction)
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS broadcasts_due_idx
+    ON broadcasts(status, scheduled_at)
+  `);
+
+  console.log("IchaBot database is ready.");
+}
+
+/* EXPRESS */
+
+app.set("trust proxy", 1);
+
+app.use(helmet({
+  contentSecurityPolicy: false
+}));
 
 app.use(express.json({
   limit: "1mb",
   verify: (req, res, buffer) => {
-    req.rawBody = buffer;
+    if (req.path === "/webhook") {
+      req.rawBody = Buffer.from(buffer);
+    }
+  }
+}));
+
+app.use(express.urlencoded({ extended: true }));
+
+app.use(session({
+  store: new PgSession({
+    pool,
+    tableName: "user_sessions",
+    createTableIfMissing: true
+  }),
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.SESSION_COOKIE_SECURE === "false"
+      ? false
+      : process.env.NODE_ENV === "production",
+    maxAge: 7 * 24 * 60 * 60 * 1000
   }
 }));
 
 app.use(express.static(path.join(__dirname, "public")));
 
-const COOKIE = "ichabot_session";
-const DAY = 86400000;
+/* HELPERS */
 
-function hash(value) {
-  return crypto.createHmac("sha256", SESSION_SECRET)
-    .update(value).digest("hex");
-}
-
-function equal(a, b) {
-  const x = Buffer.from(String(a || ""));
-  const y = Buffer.from(String(b || ""));
-  return x.length === y.length && crypto.timingSafeEqual(x, y);
-}
-
-function cookie(req) {
-  const parts = (req.headers.cookie || "").split(";");
-  for (const part of parts) {
-    const [name, ...value] = part.trim().split("=");
-    if (name === COOKIE) return decodeURIComponent(value.join("="));
-  }
-  return null;
-}
-
-function setCookie(res, token) {
-  res.setHeader("Set-Cookie",
-    `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`);
-}
-
-function clearCookie(res) {
-  res.setHeader("Set-Cookie",
-    `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`);
-}
-
-function encrypt(text) {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv(
-    "aes-256-gcm", Buffer.from(ENCRYPTION_KEY, "hex"), iv
-  );
-  const data = Buffer.concat([
-    cipher.update(text, "utf8"), cipher.final()
-  ]);
-  return [
-    iv.toString("hex"),
-    cipher.getAuthTag().toString("hex"),
-    data.toString("hex")
-  ].join(":");
-}
-
-function decrypt(value) {
-  const [iv, tag, data] = value.split(":");
-  const decipher = crypto.createDecipheriv(
-    "aes-256-gcm", Buffer.from(ENCRYPTION_KEY, "hex"),
-    Buffer.from(iv, "hex")
-  );
-  decipher.setAuthTag(Buffer.from(tag, "hex"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(data, "hex")),
-    decipher.final()
-  ]).toString("utf8");
-}
-
-function passwordHash(password, salt) {
-  return new Promise((resolve, reject) => {
-    crypto.scrypt(password, salt, 64, (err, key) => {
-      if (err) reject(err);
-      else resolve(key.toString("hex"));
-    });
-  });
-}
-
-async function loginRequired(req, res, next) {
-  try {
-    const token = cookie(req);
-    if (!token) return res.status(401).json({ error: "Please sign in." });
-
-    const result = await pool.query(
-      `SELECT u.id, u.email
-       FROM sessions s JOIN users u ON u.id=s.user_id
-       WHERE s.token_hash=$1 AND s.expires_at > NOW()`,
-      [hash(token)]
-    );
-
-    if (!result.rows.length) {
-      clearCookie(res);
-      return res.status(401).json({ error: "Please sign in again." });
-    }
-
-    req.user = result.rows[0];
-    next();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Login check failed." });
-  }
-}
-
-async function graph(method, endpoint, token, data = {}) {
-  const url = `https://graph.facebook.com/${GRAPH}/${endpoint}`;
-  const options = {
-    method,
-    url,
-    timeout: 20000
+function asyncRoute(handler) {
+  return (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch(next);
   };
+}
 
-  if (method === "GET") {
-    options.params = { ...data, access_token: token };
-  } else {
-    options.data = { ...data, access_token: token };
+function requireLogin(req, res, next) {
+  if (!req.session.userId) {
+    return res.status(401).json({
+      error: "Please log in with Facebook first."
+    });
   }
+  next();
+}
 
-  const response = await axios(options);
+async function graphGet(endpoint, params = {}) {
+  const response = await axios.get(`${GRAPH_BASE}/${endpoint}`, {
+    params,
+    timeout: 20000
+  });
   return response.data;
 }
 
-async function getPage(pageId) {
+async function graphPost(endpoint, data, accessToken) {
+  const response = await axios.post(`${GRAPH_BASE}/${endpoint}`, data, {
+    params: { access_token: accessToken },
+    timeout: 20000
+  });
+  return response.data;
+}
+
+async function getUserPages(userId) {
   const result = await pool.query(
-    "SELECT * FROM pages WHERE page_id=$1", [String(pageId)]
+    `SELECT page_id, page_name
+     FROM pages
+     WHERE user_id = $1
+     ORDER BY page_name`,
+    [userId]
   );
+  return result.rows;
+}
+
+async function getSelectedPage(req) {
+  if (req.session.selectedPageId) {
+    const selected = await pool.query(
+      `SELECT *
+       FROM pages
+       WHERE user_id = $1 AND page_id = $2
+       LIMIT 1`,
+      [req.session.userId, req.session.selectedPageId]
+    );
+
+    if (selected.rows.length) return selected.rows[0];
+  }
+
+  const result = await pool.query(
+    `SELECT *
+     FROM pages
+     WHERE user_id = $1
+     ORDER BY page_name
+     LIMIT 1`,
+    [req.session.userId]
+  );
+
   if (!result.rows.length) return null;
+
+  req.session.selectedPageId = result.rows[0].page_id;
   return result.rows[0];
 }
 
-async function sendMessenger(page, recipientId, message) {
-  return graph("POST", `${page.page_id}/messages`, decrypt(page.access_token), {
-    recipient: { id: String(recipientId) },
-    messaging_type: "RESPONSE",
-    message: { text: message }
-  });
+async function getPageById(pageId, userId = null) {
+  const result = userId
+    ? await pool.query(
+        `SELECT * FROM pages
+         WHERE page_id = $1 AND user_id = $2
+         ORDER BY connected_at DESC LIMIT 1`,
+        [String(pageId), userId]
+      )
+    : await pool.query(
+        `SELECT * FROM pages
+         WHERE page_id = $1
+         ORDER BY connected_at DESC LIMIT 1`,
+        [String(pageId)]
+      );
+
+  return result.rows[0] || null;
 }
 
-async function replyToComment(page, commentId, message) {
-  return graph("POST", `${commentId}/comments`, decrypt(page.access_token), {
-    message
-  });
-}
-
-async function initializeDatabase() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id BIGSERIAL PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      salt TEXT NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS sessions (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-      token_hash TEXT UNIQUE NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS oauth_states (
-      state TEXT PRIMARY KEY,
-      user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-      expires_at TIMESTAMPTZ NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS pages (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-      page_id TEXT UNIQUE NOT NULL,
-      page_name TEXT NOT NULL,
-      access_token TEXT NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS contacts (
-      id BIGSERIAL PRIMARY KEY,
-      page_id TEXT NOT NULL,
-      sender_id TEXT NOT NULL,
-      last_interaction TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      first_seen BOOLEAN NOT NULL DEFAULT TRUE,
-      UNIQUE(page_id, sender_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS messenger_rules (
-      id BIGSERIAL PRIMARY KEY,
-      page_id TEXT NOT NULL,
-      keyword TEXT NOT NULL DEFAULT '',
-      reply TEXT NOT NULL,
-      is_default BOOLEAN NOT NULL DEFAULT FALSE,
-      is_welcome BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS comment_rules (
-      id BIGSERIAL PRIMARY KEY,
-      page_id TEXT NOT NULL,
-      keyword TEXT NOT NULL DEFAULT '',
-      reply TEXT NOT NULL,
-      is_default BOOLEAN NOT NULL DEFAULT FALSE,
-      enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS handled_comments (
-      comment_id TEXT PRIMARY KEY,
-      page_id TEXT NOT NULL,
-      handled_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS campaigns (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-      page_id TEXT NOT NULL,
-      message TEXT NOT NULL,
-      scheduled_at TIMESTAMPTZ NOT NULL,
-      status TEXT NOT NULL DEFAULT 'scheduled',
-      sent_count INTEGER DEFAULT 0,
-      failed_count INTEGER DEFAULT 0,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS campaign_logs (
-      id BIGSERIAL PRIMARY KEY,
-      campaign_id BIGINT REFERENCES campaigns(id) ON DELETE CASCADE,
-      sender_id TEXT NOT NULL,
-      status TEXT NOT NULL,
-      error TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS page_activity (
-      id BIGSERIAL PRIMARY KEY,
-      page_id TEXT NOT NULL,
-      activity_type TEXT NOT NULL,
-      object_id TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-  `);
-
-  console.log("IchaBot database ready.");
-}
-
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", app: "IchaBot" });
-});
-
-/* CUSTOMER REGISTRATION */
-
-app.post("/api/register", async (req, res) => {
-  try {
-    const email = String(req.body.email || "").trim().toLowerCase();
-    const password = String(req.body.password || "");
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-      return res.status(400).json({ error: "Enter a valid email." });
-
-    if (password.length < 10 || password.length > 128)
-      return res.status(400).json({
-        error: "Password must contain 10 to 128 characters."
-      });
-
-    const salt = crypto.randomBytes(16).toString("hex");
-    const hashed = await passwordHash(password, salt);
-
-    await pool.query(
-      "INSERT INTO users(email,password_hash,salt) VALUES($1,$2,$3)",
-      [email, hashed, salt]
-    );
-
-    res.json({ message: "Account created. Please sign in." });
-  } catch (err) {
-    if (err.code === "23505")
-      return res.status(409).json({ error: "Email already registered." });
-
-    console.error(err);
-    res.status(500).json({ error: "Registration failed." });
-  }
-});
-
-/* CUSTOMER LOGIN */
-
-app.post("/api/login", async (req, res) => {
-  try {
-    const email = String(req.body.email || "").trim().toLowerCase();
-    const password = String(req.body.password || "");
-
-    const result = await pool.query(
-      "SELECT * FROM users WHERE email=$1", [email]
-    );
-
-    if (!result.rows.length)
-      return res.status(401).json({ error: "Incorrect login details." });
-
-    const user = result.rows[0];
-    const check = await passwordHash(password, user.salt);
-
-    if (!equal(check, user.password_hash))
-      return res.status(401).json({ error: "Incorrect login details." });
-
-    const token = crypto.randomBytes(32).toString("hex");
-
-    await pool.query(
-      `INSERT INTO sessions(user_id,token_hash,expires_at)
-       VALUES($1,$2,NOW()+INTERVAL '7 days')`,
-      [user.id, hash(token)]
-    );
-
-    setCookie(res, token);
-    res.json({ message: "Signed in.", email: user.email });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Login failed." });
-  }
-});
-
-app.get("/api/me", loginRequired, (req, res) => {
-  res.json({ user: req.user });
-});
-
-app.post("/api/logout", async (req, res) => {
-  const token = cookie(req);
-  if (token) {
-    await pool.query("DELETE FROM sessions WHERE token_hash=$1", [hash(token)]);
-  }
-  clearCookie(res);
-  res.json({ message: "Signed out." });
-});
-
-/* FACEBOOK LOGIN FOR BUSINESS */
-
-app.get("/api/facebook/start", loginRequired, async (req, res) => {
-  const state = crypto.randomBytes(32).toString("hex");
-
+async function getPageSettings(pageId) {
   await pool.query(
-    `INSERT INTO oauth_states(state,user_id,expires_at)
-     VALUES($1,$2,NOW()+INTERVAL '10 minutes')`,
-    [state, req.user.id]
+    `INSERT INTO settings(page_id)
+     VALUES($1)
+     ON CONFLICT(page_id) DO NOTHING`,
+    [pageId]
   );
 
-  const url = new URL("https://www.facebook.com/dialog/oauth");
-  url.searchParams.set("client_id", APP_ID);
-  url.searchParams.set("redirect_uri", `${BASE_URL}/api/facebook/callback`);
-  url.searchParams.set("state", state);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("config_id", LOGIN_CONFIG_ID);
+  const result = await pool.query(
+    `SELECT * FROM settings WHERE page_id = $1`,
+    [pageId]
+  );
 
-  res.redirect(url.toString());
+  return result.rows[0];
+}
+
+/* FACEBOOK LOGIN */
+
+app.get("/auth/facebook", (req, res) => {
+  const state = crypto.randomBytes(32).toString("hex");
+  req.session.oauthState = state;
+
+  const redirectUri = `${APP_BASE_URL}/auth/facebook/callback`;
+
+  const loginUrl = new URL(
+    `https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth`
+  );
+
+  loginUrl.searchParams.set("client_id", META_APP_ID);
+  loginUrl.searchParams.set("redirect_uri", redirectUri);
+  loginUrl.searchParams.set("config_id", META_LOGIN_CONFIG_ID);
+  loginUrl.searchParams.set("state", state);
+  loginUrl.searchParams.set("response_type", "code");
+  loginUrl.searchParams.set("override_default_response_type", "true");
+
+  req.session.save((error) => {
+    if (error) {
+      console.error("Login session error:", error.message);
+      return res.status(500).send("Could not start Facebook login.");
+    }
+    res.redirect(loginUrl.toString());
+  });
 });
 
-app.get("/api/facebook/callback", async (req, res) => {
-  try {
-    const state = String(req.query.state || "");
-    const code = String(req.query.code || "");
+app.get("/auth/facebook/callback", asyncRoute(async (req, res) => {
+  const { code, state, error } = req.query;
 
-    const saved = await pool.query(
-      `DELETE FROM oauth_states
-       WHERE state=$1 AND expires_at>NOW()
-       RETURNING user_id`,
-      [state]
+  if (error) {
+    return res.status(400).send("Facebook login was cancelled or denied.");
+  }
+
+  if (
+    !code ||
+    !state ||
+    !req.session.oauthState ||
+    state !== req.session.oauthState
+  ) {
+    return res.status(400).send(
+      "Facebook login security check failed. Please try again."
     );
+  }
 
-    if (!saved.rows.length || !code)
-      return res.status(400).send("Facebook connection expired. Try again.");
+  delete req.session.oauthState;
 
-    const userId = saved.rows[0].user_id;
+  const redirectUri = `${APP_BASE_URL}/auth/facebook/callback`;
 
-    const tokenResponse = await axios.get(
-      `https://graph.facebook.com/${GRAPH}/oauth/access_token`,
-      {
-        params: {
-          client_id: APP_ID,
-          client_secret: APP_SECRET,
-          redirect_uri: `${BASE_URL}/api/facebook/callback`,
-          code
-        }
-      }
-    );
+  const tokenData = await graphGet("oauth/access_token", {
+    client_id: META_APP_ID,
+    client_secret: META_APP_SECRET,
+    redirect_uri: redirectUri,
+    code
+  });
 
-    const userToken = tokenResponse.data.access_token;
+  const userAccessToken = tokenData.access_token;
+  if (!userAccessToken) {
+    throw new Error("Facebook did not return an access token.");
+  }
 
-    const pagesResponse = await graph(
-      "GET", "me/accounts", userToken,
-      { fields: "id,name,access_token,tasks" }
-    );
+  const profile = await graphGet("me", {
+    fields: "id,name,email",
+    access_token: userAccessToken
+  });
 
-    let connected = 0;
+  const userResult = await pool.query(
+    `INSERT INTO users(facebook_id, name, email)
+     VALUES($1,$2,$3)
+     ON CONFLICT(facebook_id)
+     DO UPDATE SET
+       name = EXCLUDED.name,
+       email = EXCLUDED.email
+     RETURNING id, facebook_id, name, email`,
+    [
+      profile.id,
+      profile.name || "Facebook User",
+      profile.email || null
+    ]
+  );
 
-    for (const page of pagesResponse.data || []) {
+  const user = userResult.rows[0];
+
+  /*
+    Fetch all Pages using pagination.
+  */
+
+  let after = null;
+  let pageCount = 0;
+
+  do {
+    const params = {
+      fields: "id,name,access_token,tasks",
+      limit: 100,
+      access_token: userAccessToken
+    };
+
+    if (after) params.after = after;
+
+    const accounts = await graphGet("me/accounts", params);
+    const pageList = accounts.data || [];
+
+    for (const page of pageList) {
       if (!page.id || !page.access_token) continue;
 
       await pool.query(
-        `INSERT INTO pages(user_id,page_id,page_name,access_token)
+        `INSERT INTO pages(
+           user_id, page_id, page_name, encrypted_token
+         )
          VALUES($1,$2,$3,$4)
-         ON CONFLICT(page_id) DO UPDATE SET
-           user_id=EXCLUDED.user_id,
-           page_name=EXCLUDED.page_name,
-           access_token=EXCLUDED.access_token`,
-        [userId, page.id, page.name || "Facebook Page", encrypt(page.access_token)]
+         ON CONFLICT(user_id,page_id)
+         DO UPDATE SET
+           page_name = EXCLUDED.page_name,
+           encrypted_token = EXCLUDED.encrypted_token`,
+        [
+          user.id,
+          page.id,
+          page.name || "Facebook Page",
+          encryptToken(page.access_token)
+        ]
       );
 
       try {
-        await graph("POST", `${page.id}/subscribed_apps`, page.access_token, {
-          subscribed_fields: "messages,messaging_postbacks,feed"
-        });
-      } catch (subscribeError) {
-        console.error("Page subscription:", subscribeError.response?.data || subscribeError.message);
-      }
-
-      connected++;
-    }
-
-    res.redirect("/?facebook=connected&count=" + connected);
-  } catch (err) {
-    console.error("Facebook connection:", err.response?.data || err.message);
-    res.status(500).send("Could not connect Facebook. Check Meta permissions and configuration.");
-  }
-});
-
-/* CUSTOMER PAGES */
-
-app.get("/api/pages", loginRequired, async (req, res) => {
-  const result = await pool.query(
-    "SELECT page_id,page_name,created_at FROM pages WHERE user_id=$1 ORDER BY id DESC",
-    [req.user.id]
-  );
-  res.json({ pages: result.rows });
-});
-
-app.delete("/api/pages/:pageId", loginRequired, async (req, res) => {
-  await pool.query(
-    "DELETE FROM pages WHERE page_id=$1 AND user_id=$2",
-    [req.params.pageId, req.user.id]
-  );
-  res.json({ message: "Page disconnected." });
-});
-
-/* MESSENGER AND COMMENT RULE SETTINGS */
-
-app.get("/api/rules/:pageId", loginRequired, async (req, res) => {
-  const page = await getPage(req.params.pageId);
-  if (!page || String(page.user_id) !== String(req.user.id))
-    return res.status(404).json({ error: "Page not found." });
-
-  const messenger = await pool.query(
-    "SELECT * FROM messenger_rules WHERE page_id=$1 ORDER BY id",
-    [page.page_id]
-  );
-  const comments = await pool.query(
-    "SELECT * FROM comment_rules WHERE page_id=$1 ORDER BY id",
-    [page.page_id]
-  );
-
-  res.json({ messenger: messenger.rows, comments: comments.rows });
-});
-
-app.post("/api/rules/:pageId", loginRequired, async (req, res) => {
-  const page = await getPage(req.params.pageId);
-  if (!page || String(page.user_id) !== String(req.user.id))
-    return res.status(404).json({ error: "Page not found." });
-
-  const type = req.body.type;
-  const keyword = String(req.body.keyword || "").trim().toLowerCase();
-  const reply = String(req.body.reply || "").trim();
-
-  if (!reply || reply.length > 2000)
-    return res.status(400).json({ error: "Enter a reply under 2,000 characters." });
-
-  if (!["messenger", "comment"].includes(type))
-    return res.status(400).json({ error: "Invalid rule type." });
-
-  const isDefault = req.body.isDefault === true;
-  const isWelcome = req.body.isWelcome === true;
-
-  if (type === "messenger") {
-    if (isDefault || isWelcome) {
-      await pool.query(
-        `DELETE FROM messenger_rules
-         WHERE page_id=$1 AND
-         (($2=TRUE AND is_default=TRUE) OR ($3=TRUE AND is_welcome=TRUE))`,
-        [page.page_id, isDefault, isWelcome]
-      );
-    }
-
-    await pool.query(
-      `INSERT INTO messenger_rules(page_id,keyword,reply,is_default,is_welcome)
-       VALUES($1,$2,$3,$4,$5)`,
-      [page.page_id, keyword, reply, isDefault, isWelcome]
-    );
-  } else {
-    if (isDefault) {
-      await pool.query(
-        "DELETE FROM comment_rules WHERE page_id=$1 AND is_default=TRUE",
-        [page.page_id]
-      );
-    }
-
-    await pool.query(
-      `INSERT INTO comment_rules(page_id,keyword,reply,is_default)
-       VALUES($1,$2,$3,$4)`,
-      [page.page_id, keyword, reply, isDefault]
-    );
-  }
-
-  res.json({ message: "Reply rule saved." });
-});
-
-/* WEBHOOK VERIFICATION */
-
-app.get("/webhook", (req, res) => {
-  if (
-    req.query["hub.mode"] === "subscribe" &&
-    req.query["hub.verify_token"] === VERIFY_TOKEN
-  ) {
-    return res.status(200).send(req.query["hub.challenge"]);
-  }
-  res.sendStatus(403);
-});
-
-function validSignature(req) {
-  const signature = req.headers["x-hub-signature-256"];
-  if (!signature || !req.rawBody) return false;
-
-  const expected = "sha256=" + crypto
-    .createHmac("sha256", APP_SECRET)
-    .update(req.rawBody)
-    .digest("hex");
-
-  return equal(signature, expected);
-}
-
-/* MESSENGER AUTO REPLIES */
-
-async function handleMessage(page, event) {
-  const sender = event.sender && event.sender.id;
-  const text = String(event.message?.text || "").trim();
-
-  if (!sender || !text || event.message?.is_echo) return;
-
-  const contact = await pool.query(
-    `INSERT INTO contacts(page_id,sender_id,last_interaction,first_seen)
-     VALUES($1,$2,NOW(),TRUE)
-     ON CONFLICT(page_id,sender_id) DO UPDATE SET
-       last_interaction=NOW()
-     RETURNING first_seen`,
-    [page.page_id, String(sender)]
-  );
-
-  const rules = await pool.query(
-    "SELECT * FROM messenger_rules WHERE page_id=$1 ORDER BY id",
-    [page.page_id]
-  );
-
-  const lower = text.toLowerCase();
-  const first = contact.rows[0].first_seen;
-
-  let reply = null;
-
-  if (first) {
-    const welcome = rules.rows.find(r => r.is_welcome);
-    if (welcome) reply = welcome.reply;
-
-    await pool.query(
-      "UPDATE contacts SET first_seen=FALSE WHERE page_id=$1 AND sender_id=$2",
-      [page.page_id, String(sender)]
-    );
-  }
-
-  if (!reply) {
-    const match = rules.rows.find(
-      r => !r.is_default && !r.is_welcome &&
-      r.keyword && lower.includes(r.keyword.toLowerCase())
-    );
-    if (match) reply = match.reply;
-  }
-
-  if (!reply) {
-    const fallback = rules.rows.find(r => r.is_default);
-    reply = fallback?.reply ||
-      "Thank you for contacting us. How can we help you?";
-  }
-
-  await sendMessenger(page, sender, reply);
-}
-
-/* FACEBOOK COMMENT AUTO REPLIES */
-
-async function handleComment(page, value) {
-  const item = value.item;
-  const verb = value.verb;
-
-  if (item !== "comment" || verb !== "add") return;
-
-  const commentId = String(value.comment_id || value.post_id || "");
-  const message = String(value.message || "").trim();
-
-  if (!commentId || !message) return;
-
-  const authorId = String(value.from?.id || "");
-  if (authorId === String(page.page_id)) return;
-
-  const claimed = await pool.query(
-    `INSERT INTO handled_comments(comment_id,page_id)
-     VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING comment_id`,
-    [commentId, page.page_id]
-  );
-
-  if (!claimed.rows.length) return;
-
-  const rules = await pool.query(
-    `SELECT * FROM comment_rules
-     WHERE page_id=$1 AND enabled=TRUE ORDER BY id`,
-    [page.page_id]
-  );
-
-  const lower = message.toLowerCase();
-  const match = rules.rows.find(
-    r => !r.is_default && r.keyword &&
-    lower.includes(r.keyword.toLowerCase())
-  );
-
-  const fallback = rules.rows.find(r => r.is_default);
-  const reply = match?.reply || fallback?.reply;
-
-  if (reply) {
-    await replyToComment(page, commentId, reply);
-  }
-}
-
-/* WEBHOOK EVENTS */
-
-async function processWebhook(body) {
-  if (!body || body.object !== "page") return;
-
-  for (const entry of body.entry || []) {
-    const page = await getPage(entry.id);
-    if (!page) continue;
-
-    for (const event of entry.messaging || []) {
-      try {
-        await handleMessage(page, event);
-      } catch (err) {
-        console.error("Messenger event:", err.response?.data || err.message);
-      }
-    }
-
-    for (const change of entry.changes || []) {
-      try {
-        if (change.field === "feed") {
-          const value = change.value || {};
-
-          if (value.item === "comment") {
-            await handleComment(page, value);
-          } else if (value.verb === "add") {
-            await pool.query(
-              `INSERT INTO page_activity(page_id,activity_type,object_id)
-               VALUES($1,$2,$3)`,
-              [page.page_id, value.item || "feed_activity",
-               String(value.post_id || "")]
-            );
+        await axios.post(
+          `${GRAPH_BASE}/${page.id}/subscribed_apps`,
+          null,
+          {
+            params: {
+              subscribed_fields: "messages,messaging_postbacks,feed",
+              access_token: page.access_token
+            },
+            timeout: 20000
           }
-        }
-      } catch (err) {
-        console.error("Page event:", err.response?.data || err.message);
+        );
+      } catch (subscriptionError) {
+        console.error(
+          "Page webhook subscription failed:",
+          subscriptionError.response?.data || subscriptionError.message
+        );
       }
+
+      pageCount++;
     }
-  }
-}
 
-app.post("/webhook", (req, res) => {
-  if (!validSignature(req)) return res.sendStatus(401);
+    after = accounts.paging?.cursors?.after || null;
+  } while (after && pageCount < 1000);
 
-  res.sendStatus(200);
+  req.session.userId = user.id;
+  req.session.userName = user.name;
 
-  processWebhook(req.body).catch(err =>
-    console.error("Webhook processing:", err)
-  );
+  const savedPages = await getUserPages(user.id);
+  req.session.selectedPageId =
+    savedPages.length ? savedPages[0].page_id : null;
+
+  req.session.save((saveError) => {
+    if (saveError) {
+      console.error("Session save failed:", saveError.message);
+      return res.status(500).send("Could not save your login.");
+    }
+    res.redirect("/");
+  });
+}));
+
+/* LOGOUT */
+
+app.get("/auth/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie("connect.sid");
+    res.redirect("/");
+  });
 });
 
-/* BROADCAST CAMPAIGNS */
+/* ACCOUNT AND PAGE API */
 
-app.post("/api/campaigns", loginRequired, async (req, res) => {
-  try {
-    const page = await getPage(req.body.pageId);
-
-    if (!page || String(page.user_id) !== String(req.user.id))
-      return res.status(404).json({ error: "Page not found." });
-
-    const message = String(req.body.message || "").trim();
-    const scheduledAt = new Date(req.body.scheduledAt);
-
-    if (!message || message.length > 2000 || isNaN(scheduledAt.getTime()))
-      return res.status(400).json({ error: "Enter a message and valid schedule time." });
-
-    if (scheduledAt.getTime() < Date.now() - 60000)
-      return res.status(400).json({ error: "Choose a future time." });
-
-    const result = await pool.query(
-      `INSERT INTO campaigns(user_id,page_id,message,scheduled_at)
-       VALUES($1,$2,$3,$4) RETURNING *`,
-      [req.user.id, page.page_id, message, scheduledAt]
-    );
-
-    res.json({ message: "Campaign scheduled.", campaign: result.rows[0] });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Could not schedule campaign." });
+app.get("/api/me", asyncRoute(async (req, res) => {
+  if (!req.session.userId) {
+    return res.json({ loggedIn: false });
   }
-});
 
-app.get("/api/campaigns", loginRequired, async (req, res) => {
+  const pages = await getUserPages(req.session.userId);
+
+  res.json({
+    loggedIn: true,
+    user: { name: req.session.userName || "Facebook User" },
+    pages,
+    selectedPageId: req.session.selectedPageId || null
+  });
+}));
+
+app.post("/api/pages/select", requireLogin, asyncRoute(async (req, res) => {
+  const pageId = String(req.body.pageId || "");
+
   const result = await pool.query(
-    `SELECT * FROM campaigns WHERE user_id=$1 ORDER BY created_at DESC`,
-    [req.user.id]
-  );
-  res.json({ campaigns: result.rows });
-});
-
-async function runCampaigns() {
-  const due = await pool.query(
-    `SELECT * FROM campaigns
-     WHERE status='scheduled' AND scheduled_at<=NOW()
-     ORDER BY scheduled_at LIMIT 5`
+    `SELECT page_id, page_name
+     FROM pages
+     WHERE user_id = $1 AND page_id = $2`,
+    [req.session.userId, pageId]
   );
 
-  for (const campaign of due.rows) {
-    const locked = await pool.query(
-      `UPDATE campaigns SET status='sending'
-       WHERE id=$1 AND status='scheduled' RETURNING id`,
-      [campaign.id]
-    );
-    if (!locked.rows.length) continue;
-
-    const page = await getPage(campaign.page_id);
-    if (!page) {
-      await pool.query(
-        "UPDATE campaigns SET status='failed' WHERE id=$1",
-        [campaign.id]
-      );
-      continue;
-    }
-
-    const contacts = await pool.query(
-      `SELECT sender_id FROM contacts
-       WHERE page_id=$1 AND last_interaction>NOW()-INTERVAL '24 hours'`,
-      [campaign.page_id]
-    );
-
-    let sent = 0;
-    let failed = 0;
-
-    for (const contact of contacts.rows) {
-      try {
-        await sendMessenger(page, contact.sender_id, campaign.message);
-        sent++;
-
-        await pool.query(
-          `INSERT INTO campaign_logs(campaign_id,sender_id,status)
-           VALUES($1,$2,'sent')`,
-          [campaign.id, contact.sender_id]
-        );
-      } catch (err) {
-        failed++;
-
-        await pool.query(
-          `INSERT INTO campaign_logs(campaign_id,sender_id,status,error)
-           VALUES($1,$2,'failed',$3)`,
-          [campaign.id, contact.sender_id,
-           String(err.response?.data?.error?.message || err.message).slice(0,500)]
-        );
-      }
-    }
-
-    await pool.query(
-      `UPDATE campaigns SET status='completed',
-       sent_count=$2,failed_count=$3 WHERE id=$1`,
-      [campaign.id, sent, failed]
-    );
+  if (!result.rows.length) {
+    return res.status(404).json({
+      error: "This Page is not connected to your account."
+    });
   }
-}
 
-setInterval(() => {
-  runCampaigns().catch(err => console.error("Campaign scheduler:", err));
-}, 30000);
+  req.session.selectedPageId = pageId;
 
-/* DASHBOARD DATA */
+  res.json({
+    success: true,
+    page: result.rows[0]
+  });
+}));
 
-app.get("/api/dashboard", loginRequired, async (req, res) => {
-  const pages = await pool.query(
-    "SELECT page_id,page_name FROM pages WHERE user_id=$1",
-    [req.user.id]
-  );
+/* CHATBOT SETTINGS */
 
-  const campaigns = await pool.query(
-    `SELECT COUNT(*)::int AS total,
-     COALESCE(SUM(sent_count),0)::int AS sent,
-     COALESCE(SUM(failed_count),0)::int AS failed
-     FROM campaigns WHERE user_id=$1`,
-    [req.user.id]
+app.get("/api/settings", requireLogin, asyncRoute(async (req, res) => {
+  const page = await getSelectedPage(req);
+
+  if (!page) {
+    return res.status(400).json({
+      error: "Connect a Facebook Page first."
+    });
+  }
+
+  res.json(await getPageSettings(page.page_id));
+}));
+
+app.post("/api/settings", requireLogin, asyncRoute(async (req, res) => {
+  const page = await getSelectedPage(req);
+
+  if (!page) {
+    return res.status(400).json({
+      error: "Connect a Facebook Page first."
+    });
+  }
+
+  const welcomeMessage = String(req.body.welcome_message || "").trim();
+  const defaultReply = String(req.body.default_reply || "").trim();
+  const commentReply = String(req.body.comment_reply || "").trim();
+
+  if (
+    welcomeMessage.length > 2000 ||
+    defaultReply.length > 2000 ||
+    commentReply.length > 2000
+  ) {
+    return res.status(400).json({
+      error: "Each reply must be 2000 characters or less."
+    });
+  }
+
+  await pool.query(
+    `INSERT INTO settings(
+       page_id,
+       welcome_enabled,
+       welcome_message,
+       default_enabled,
+       default_reply,
+       comment_enabled,
+       comment_reply,
+       updated_at
+     )
+     VALUES($1,$2,$3,$4,$5,$6,$7,NOW())
+     ON CONFLICT(page_id)
+     DO UPDATE SET
+       welcome_enabled = EXCLUDED.welcome_enabled,
+       welcome_message = EXCLUDED.welcome_message,
+       default_enabled = EXCLUDED.default_enabled,
+       default_reply = EXCLUDED.default_reply,
+       comment_enabled = EXCLUDED.comment_enabled,
+       comment_reply = EXCLUDED.comment_reply,
+       updated_at = NOW()`,
+    [
+      page.page_id,
+      req.body.welcome_enabled === true,
+      welcomeMessage,
+      req.body.default_enabled === true,
+      defaultReply,
+      req.body.comment_enabled === true,
+      commentReply
+    ]
   );
 
   res.json({
-    pages: pages.rows,
-    campaigns: campaigns.rows[0]
+    success: true,
+    message: "Chatbot settings saved successfully."
+  });
+}));
+
+/* MESSENGER SENDING */
+
+async function sendMessengerMessage(pageId, token, psid, message) {
+  return graphPost(
+    `${pageId}/messages`,
+    {
+      recipient: { id: psid },
+      messaging_type: "RESPONSE",
+      message: { text: message }
+    },
+    token
+  );
+}
+
+/* EVENT DEDUPLICATION */
+
+async function claimEvent(eventId) {
+  const result = await pool.query(
+    `INSERT INTO processed_events(event_id, status, updated_at)
+     VALUES($1, 'processing', NOW())
+     ON CONFLICT(event_id)
+     DO UPDATE SET
+       status = 'processing',
+       updated_at = NOW()
+     WHERE processed_events.status = 'failed'
+        OR (
+          processed_events.status = 'processing'
+          AND processed_events.updated_at < NOW() - INTERVAL '5 minutes'
+        )
+     RETURNING event_id`,
+    [eventId]
+  );
+
+  return result.rowCount > 0;
+}
+
+async function finishEvent(eventId, success) {
+  await pool.query(
+    `UPDATE processed_events
+     SET status = $2, updated_at = NOW()
+     WHERE event_id = $1`,
+    [eventId, success ? "processed" : "failed"]
+  );
+}
+
+/* INCOMING MESSENGER MESSAGES */
+
+async function processMessage(pageId, event) {
+  if (!event.sender?.id || event.message?.is_echo) return;
+
+  const psid = String(event.sender.id);
+  const messageId = event.message?.mid;
+  const eventId = messageId
+    ? `message:${pageId}:${messageId}`
+    : null;
+
+  if (eventId && !(await claimEvent(eventId))) return;
+
+  try {
+    const page = await getPageById(pageId);
+    if (!page) return;
+
+    const token = decryptToken(page.encrypted_token);
+    const settings = await getPageSettings(pageId);
+
+    await pool.query(
+      `INSERT INTO contacts(page_id, psid, last_interaction, first_message)
+       VALUES($1,$2,NOW(),TRUE)
+       ON CONFLICT(page_id,psid)
+       DO UPDATE SET last_interaction = NOW()`,
+      [pageId, psid]
+    );
+
+    /*
+      Claim the first welcome reply safely.
+      If sending fails, release the claim so it can be tried again.
+    */
+
+    const claim = await pool.query(
+      `UPDATE contacts
+       SET welcome_claimed_at = NOW()
+       WHERE page_id = $1
+         AND psid = $2
+         AND first_message = TRUE
+         AND (
+           welcome_claimed_at IS NULL
+           OR welcome_claimed_at < NOW() - INTERVAL '5 minutes'
+         )
+       RETURNING psid`,
+      [pageId, psid]
+    );
+
+    const isFirstMessage = claim.rowCount > 0;
+
+    let reply = "";
+
+    if (isFirstMessage && settings.welcome_enabled && settings.welcome_message) {
+      reply = settings.welcome_message;
+    } else if (settings.default_enabled && settings.default_reply) {
+      reply = settings.default_reply;
+    }
+
+    if (!reply) {
+      if (isFirstMessage) {
+        await pool.query(
+          `UPDATE contacts
+           SET first_message = FALSE, welcome_claimed_at = NULL
+           WHERE page_id = $1 AND psid = $2`,
+          [pageId, psid]
+        );
+      }
+
+      if (eventId) await finishEvent(eventId, true);
+      return;
+    }
+
+    try {
+      await sendMessengerMessage(pageId, token, psid, reply);
+
+      if (isFirstMessage) {
+        await pool.query(
+          `UPDATE contacts
+           SET first_message = FALSE, welcome_claimed_at = NULL
+           WHERE page_id = $1 AND psid = $2`,
+          [pageId, psid]
+        );
+      }
+
+      if (eventId) await finishEvent(eventId, true);
+    } catch (error) {
+      if (isFirstMessage) {
+        await pool.query(
+          `UPDATE contacts
+           SET welcome_claimed_at = NULL
+           WHERE page_id = $1 AND psid = $2`,
+          [pageId, psid]
+        );
+      }
+
+      throw error;
+    }
+  } catch (error) {
+    if (eventId) await finishEvent(eventId, false);
+    throw error;
+  }
+}
+
+/* AUTOMATIC COMMENT PRIVATE REPLY */
+
+async function processComment(pageId, value) {
+  if (
+    !value ||
+    value.item !== "comment" ||
+    value.verb !== "add"
+  ) return;
+
+  const commentId = value.comment_id || value.id;
+  if (!commentId) return;
+
+  if (value.from && String(value.from.id) === String(pageId)) return;
+
+  const eventId = `comment:${pageId}:${commentId}`;
+  if (!(await claimEvent(eventId))) return;
+
+  try {
+    const page = await getPageById(pageId);
+    if (!page) {
+      await finishEvent(eventId, true);
+      return;
+    }
+
+    const settings = await getPageSettings(pageId);
+
+    if (!settings.comment_enabled || !settings.comment_reply) {
+      await finishEvent(eventId, true);
+      return;
+    }
+
+    const token = decryptToken(page.encrypted_token);
+
+    await graphPost(
+      `${commentId}/private_replies`,
+      { message: settings.comment_reply },
+      token
+    );
+
+    await finishEvent(eventId, true);
+    console.log("Comment private reply sent:", commentId);
+  } catch (error) {
+    await finishEvent(eventId, false);
+    throw error;
+  }
+}
+
+/* WEBHOOK EVENT PROCESSING */
+
+async function processWebhookPayload(payload) {
+  if (!payload || !Array.isArray(payload.entry)) return;
+
+  for (const entry of payload.entry) {
+    const pageId = String(entry.id || "");
+    if (!pageId) continue;
+
+    if (Array.isArray(entry.messaging)) {
+      for (const event of entry.messaging) {
+        try {
+          await processMessage(pageId, event);
+        } catch (error) {
+          console.error(
+            "Message event failed:",
+            error.response?.data || error.message
+          );
+        }
+      }
+    }
+
+    if (Array.isArray(entry.changes)) {
+      for (const change of entry.changes) {
+        if (change.field === "feed") {
+          try {
+            await processComment(pageId, change.value);
+          } catch (error) {
+            console.error(
+              "Comment event failed:",
+              error.response?.data || error.message
+            );
+          }
+        }
+      }
+    }
+  }
+}
+
+/* FACEBOOK WEBHOOK */
+
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("Facebook webhook verified.");
+    return res.status(200).send(challenge);
+  }
+
+  return res.sendStatus(403);
+});
+
+app.post("/webhook", (req, res) => {
+  const signature = req.headers["x-hub-signature-256"];
+  const rawBody = req.rawBody;
+
+  if (!signature || !Buffer.isBuffer(rawBody)) {
+    return res.sendStatus(401);
+  }
+
+  const expected =
+    "sha256=" +
+    crypto.createHmac("sha256", META_APP_SECRET)
+      .update(rawBody)
+      .digest("hex");
+
+  const receivedBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+
+  if (
+    receivedBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(receivedBuffer, expectedBuffer)
+  ) {
+    return res.sendStatus(401);
+  }
+
+  let payload;
+
+  try {
+    payload = JSON.parse(rawBody.toString("utf8"));
+  } catch {
+    return res.sendStatus(400);
+  }
+
+  res.sendStatus(200);
+
+  processWebhookPayload(payload).catch((error) => {
+    console.error("Webhook processing failed:", error);
   });
 });
+
+/* BROADCASTING */
+
+async function sendBroadcast(broadcast) {
+  const page = await getPageById(broadcast.page_id, broadcast.user_id);
+
+  if (!page) {
+    throw new Error("Connected Facebook Page was not found.");
+  }
+
+  const token = decryptToken(page.encrypted_token);
+
+  const contacts = await pool.query(
+    `SELECT psid
+     FROM contacts
+     WHERE page_id = $1
+       AND last_interaction > NOW() - INTERVAL '24 hours'
+     ORDER BY last_interaction DESC
+     LIMIT 5000`,
+    [broadcast.page_id]
+  );
+
+  let sent = 0;
+  let failed = 0;
+
+  for (const contact of contacts.rows) {
+    try {
+      await sendMessengerMessage(
+        broadcast.page_id,
+        token,
+        contact.psid,
+        broadcast.message
+      );
+      sent++;
+    } catch (error) {
+      failed++;
+      console.error(
+        "Broadcast delivery failed:",
+        error.response?.data || error.message
+      );
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  return {
+    sent,
+    failed,
+    eligible: contacts.rowCount
+  };
+}
+
+/* CREATE OR SCHEDULE BROADCAST */
+
+app.post("/api/broadcasts", requireLogin, asyncRoute(async (req, res) => {
+  const page = await getSelectedPage(req);
+
+  if (!page) {
+    return res.status(400).json({
+      error: "Connect a Facebook Page first."
+    });
+  }
+
+  const message = String(req.body.message || "").trim();
+
+  if (!message) {
+    return res.status(400).json({
+      error: "Enter a broadcast message."
+    });
+  }
+
+  if (message.length > 2000) {
+    return res.status(400).json({
+      error: "Message must be 2000 characters or less."
+    });
+  }
+
+  let scheduleDate = null;
+
+  if (req.body.scheduledAt) {
+    scheduleDate = new Date(req.body.scheduledAt);
+
+    if (Number.isNaN(scheduleDate.getTime())) {
+      return res.status(400).json({
+        error: "Invalid scheduled date and time."
+      });
+    }
+
+    if (scheduleDate.getTime() <= Date.now()) {
+      return res.status(400).json({
+        error: "Choose a future date and time."
+      });
+    }
+  }
+
+  const status = scheduleDate ? "scheduled" : "sending";
+
+  const created = await pool.query(
+    `INSERT INTO broadcasts(
+       user_id, page_id, message, scheduled_at, status, locked_at
+     )
+     VALUES($1,$2,$3,$4,$5,CASE WHEN $5 = 'sending' THEN NOW() ELSE NULL END)
+     RETURNING *`,
+    [
+      req.session.userId,
+      page.page_id,
+      message,
+      scheduleDate,
+      status
+    ]
+  );
+
+  const broadcast = created.rows[0];
+
+  if (scheduleDate) {
+    return res.json({
+      success: true,
+      message: "Broadcast scheduled successfully.",
+      broadcast
+    });
+  }
+
+  try {
+    const result = await sendBroadcast(broadcast);
+
+    await pool.query(
+      `UPDATE broadcasts
+       SET status = 'completed',
+           sent_count = $1,
+           failed_count = $2,
+           completed_at = NOW(),
+           locked_at = NULL
+       WHERE id = $3 AND user_id = $4`,
+      [result.sent, result.failed, broadcast.id, req.session.userId]
+    );
+
+    return res.json({
+      success: true,
+      message: "Broadcast completed.",
+      sent: result.sent,
+      failed: result.failed,
+      eligible: result.eligible
+    });
+  } catch (error) {
+    await pool.query(
+      `UPDATE broadcasts
+       SET status = 'failed',
+           completed_at = NOW(),
+           locked_at = NULL
+       WHERE id = $1 AND user_id = $2`,
+      [broadcast.id, req.session.userId]
+    );
+
+    throw error;
+  }
+}));
+
+/* BROADCAST HISTORY */
+
+app.get("/api/broadcasts", requireLogin, asyncRoute(async (req, res) => {
+  const result = await pool.query(
+    `SELECT
+       id, page_id, message, scheduled_at, status,
+       sent_count, failed_count, created_at, completed_at
+     FROM broadcasts
+     WHERE user_id = $1
+     ORDER BY created_at DESC
+     LIMIT 50`,
+    [req.session.userId]
+  );
+
+  res.json(result.rows);
+}));
+
+/* SCHEDULED BROADCAST WORKER */
+
+let workerRunning = false;
+
+async function processDueBroadcasts() {
+  if (workerRunning) return;
+
+  workerRunning = true;
+
+  try {
+    /*
+      Recover jobs left in sending state after a server crash.
+      This may retry a job that had partially sent before the crash.
+    */
+
+    await pool.query(
+      `UPDATE broadcasts
+       SET status = 'scheduled', locked_at = NULL
+       WHERE status = 'sending'
+         AND locked_at < NOW() - INTERVAL '30 minutes'`
+    );
+
+    for (let count = 0; count < 3; count++) {
+      const client = await pool.connect();
+      let broadcast = null;
+
+      try {
+        await client.query("BEGIN");
+
+        const result = await client.query(`
+          WITH next_job AS (
+            SELECT id
+            FROM broadcasts
+            WHERE status = 'scheduled'
+              AND scheduled_at <= NOW()
+            ORDER BY scheduled_at
+            FOR UPDATE SKIP LOCKED
+            LIMIT 1
+          )
+          UPDATE broadcasts AS b
+          SET status = 'sending',
+              locked_at = NOW()
+          FROM next_job
+          WHERE b.id = next_job.id
+          RETURNING b.*
+        `);
+
+        broadcast = result.rows[0] || null;
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      if (!broadcast) break;
+
+      try {
+        const result = await sendBroadcast(broadcast);
+
+        await pool.query(
+          `UPDATE broadcasts
+           SET status = 'completed',
+               sent_count = $1,
+               failed_count = $2,
+               completed_at = NOW(),
+               locked_at = NULL
+           WHERE id = $3`,
+          [result.sent, result.failed, broadcast.id]
+        );
+
+        console.log(`Scheduled broadcast ${broadcast.id} completed.`);
+      } catch (error) {
+        console.error(
+          "Scheduled broadcast failed:",
+          error.response?.data || error.message
+        );
+
+        await pool.query(
+          `UPDATE broadcasts
+           SET status = 'failed',
+               completed_at = NOW(),
+               locked_at = NULL
+           WHERE id = $1`,
+          [broadcast.id]
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Broadcast worker error:", error.message);
+  } finally {
+    workerRunning = false;
+  }
+}
+
+/* HEALTH CHECK */
+
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    app: "IchaBot"
+  });
+});
+
+/* HOME PAGE */
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-async function start() {
-  try {
-    await initializeDatabase();
-    app.listen(PORT, () => console.log(`IchaBot running on ${PORT}`));
-  } catch (err) {
-    console.error("Startup failed:", err);
-    process.exit(1);
-  }
-}
+/* ERROR HANDLER */
 
-start();
+app.use((error, req, res, next) => {
+  console.error(
+    "Application error:",
+    error.response?.data || error.stack || error.message
+  );
+
+  if (res.headersSent) return next(error);
+
+  res.status(500).json({
+    error: "Something went wrong. Check the Render logs."
+  });
+});
+
+/* START SERVER */
+
+initDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`IchaBot is running on port ${PORT}`);
+      console.log(`App URL: ${APP_BASE_URL}`);
+      console.log(`Graph API: ${GRAPH_VERSION}`);
+
+      processDueBroadcasts();
+      setInterval(processDueBroadcasts, 15000);
+    });
+  })
+  .catch((error) => {
+    console.error("IchaBot could not start:", error);
+    process.exit(1);
+  });
