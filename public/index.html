@@ -15,14 +15,8 @@
   <main>
     <section id="auth">
       <h2>Welcome to IchaBot</h2>
-      <p>Create an account or sign in.</p>
-
-      <form id="authForm">
-        <input id="email" type="email" placeholder="Email address" required>
-        <input id="password" type="password" placeholder="Password (10 characters minimum)" minlength="10" required>
-        <button type="submit" id="loginBtn">Sign in</button>
-        <button type="button" id="registerBtn">Create account</button>
-      </form>
+      <p>Sign in securely with your Facebook account to connect your Page.</p>
+      <button type="button" id="facebookLoginBtn">Continue with Facebook</button>
     </section>
 
     <section id="dashboard" hidden>
@@ -41,19 +35,18 @@
 
       <section class="panel">
         <h3>Messenger automatic replies</h3>
-        <input id="messageKeyword" placeholder="Keyword (leave blank for default)">
-        <textarea id="messageReply" placeholder="Messenger reply"></textarea>
-        <label><input type="checkbox" id="messageDefault"> Default reply</label>
-        <label><input type="checkbox" id="messageWelcome"> Welcome reply</label>
-        <button id="saveMessage">Save Messenger reply</button>
+        <label><input type="checkbox" id="messageWelcome"> Enable first-message welcome</label>
+        <textarea id="welcomeMessage" placeholder="Welcome message"></textarea>
+        <label><input type="checkbox" id="messageDefault"> Enable default reply</label>
+        <textarea id="defaultReply" placeholder="Default Messenger reply"></textarea>
+        <button id="saveMessage">Save Messenger settings</button>
       </section>
 
       <section class="panel">
         <h3>Automatic comment replies</h3>
-        <input id="commentKeyword" placeholder="Keyword (leave blank for default)">
-        <textarea id="commentReply" placeholder="Public comment reply"></textarea>
-        <label><input type="checkbox" id="commentDefault"> Default comment reply</label>
-        <button id="saveComment">Save comment reply</button>
+        <label><input type="checkbox" id="commentDefault"> Enable private reply to comments</label>
+        <textarea id="commentReply" placeholder="Private comment reply"></textarea>
+        <button id="saveComment">Save comment settings</button>
       </section>
 
       <section class="panel">
@@ -61,7 +54,8 @@
         <textarea id="campaignMessage" placeholder="Write your broadcast message"></textarea>
         <label for="campaignTime">Date and time</label>
         <input id="campaignTime" type="datetime-local">
-        <button id="scheduleBtn">Schedule broadcast</button>
+        <p>Leave date and time empty to send immediately. Choose a future date and time to schedule.</p>
+        <button id="scheduleBtn">Send / Schedule broadcast</button>
       </section>
 
       <section class="panel">
@@ -70,11 +64,6 @@
         <div id="campaignList"></div>
       </section>
 
-      <section class="panel">
-        <h3>Dashboard summary</h3>
-        <button id="summaryRefresh">Refresh summary</button>
-        <pre id="summary"></pre>
-      </section>
     </section>
   </main>
 
