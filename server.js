@@ -175,6 +175,30 @@ async function initDatabase() {
     ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ
   `);
 
+  // Upgrade older databases safely. Earlier versions used schedule_at,
+  // while the current application uses scheduled_at.
+  await pool.query(`
+    ALTER TABLE broadcasts
+    ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ
+  `);
+
+  await pool.query(`
+    DO $
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'broadcasts'
+          AND column_name = 'schedule_at'
+      ) THEN
+        EXECUTE 'UPDATE broadcasts
+                 SET scheduled_at = schedule_at
+                 WHERE scheduled_at IS NULL';
+      END IF;
+    END
+    $;
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS processed_events (
       event_id TEXT PRIMARY KEY,
