@@ -63,8 +63,16 @@ async function processComment(v){
  if(!pageReady()||!v||v.item!=="comment"||v.verb!=="add")return;
  const id=v.comment_id||v.id;if(!id||(v.from&&String(v.from.id)===PAGE_ID))return;
  const eventId="comment:"+PAGE_ID+":"+id;if(!(await claimEvent(eventId)))return;
- try{const s=await getSettings();if(s.comment_enabled&&s.comment_reply)await graphPost(id+"/private_replies",{message:s.comment_reply});await finishEvent(eventId,true);}
- catch(e){await finishEvent(eventId,false);throw e;}
+ const s=await getSettings();
+ if(s.comment_enabled){
+  try{await graphPost(id+"/likes",{});console.log("Comment liked successfully:",id);}
+  catch(e){console.error("Comment like failed:",e.response?.data||e.message);}
+  if(s.comment_reply){
+   try{await graphPost(id+"/private_replies",{message:s.comment_reply});console.log("Private comment reply sent successfully:",id);}
+   catch(e){console.error("Private comment reply failed:",e.response?.data||e.message);}
+  }
+ }
+ await finishEvent(eventId,true);
 }
 async function processPayload(payload){for(const entry of payload.entry||[]){if(PAGE_ID&&String(entry.id)!==PAGE_ID)continue;for(const e of entry.messaging||[]){try{await processMessage(e);}catch(err){console.error("Messenger event failed:",err.response?.data||err.message);}}for(const c of entry.changes||[]){if(c.field==="feed")try{await processComment(c.value);}catch(err){console.error("Comment event failed:",err.response?.data||err.message);}}}}
 app.post("/api/login",(req,res)=>{
