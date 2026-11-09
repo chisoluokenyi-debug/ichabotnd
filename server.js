@@ -82,6 +82,11 @@ app.post("/api/login",(req,res)=>{
 });
 app.post("/api/logout",(req,res)=>req.session.destroy(()=>res.json({success:true})));
 app.get("/api/me",(req,res)=>res.json({authenticated:!!req.session.adminAuthenticated,pageConnected:pageReady(),pageName:pageReady()?PAGE_NAME:null,pageId:pageReady()?PAGE_ID:null,needsSetup:!ADMIN_PASSWORD||!PAGE_ID||!PAGE_ACCESS_TOKEN||!APP_SECRET||!VERIFY_TOKEN}));
+app.get("/api/audience",requireAdmin,asyncRoute(async(req,res)=>{
+ if(!PAGE_ID)return res.status(503).json({error:"PAGE_ID is missing in Render."});
+ const r=await pool.query(`SELECT COUNT(*)::int AS total,COUNT(*) FILTER (WHERE last_interaction>NOW()-INTERVAL '24 hours')::int AS eligible FROM contacts WHERE page_id=$1`,[PAGE_ID]);
+ res.json({total:Number(r.rows[0].total||0),eligible:Number(r.rows[0].eligible||0),windowHours:24});
+}));
 app.get("/api/settings",requireAdmin,asyncRoute(async(req,res)=>{if(!PAGE_ID)return res.status(503).json({error:"PAGE_ID is missing in Render."});res.json(await getSettings());}));
 app.post("/api/settings",requireAdmin,asyncRoute(async(req,res)=>{
  if(!PAGE_ID)return res.status(503).json({error:"PAGE_ID is missing in Render."});
