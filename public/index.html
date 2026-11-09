@@ -1,11 +1,52 @@
-<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111827"><title>IchaBot Dashboard</title><link rel="stylesheet" href="/style.css"></head>
-<body><header><h1>IchaBot</h1><button id="logoutBtn" class="secondary" hidden>Sign out</button></header><main>
-<section id="loginPanel" class="panel narrow"><h2>Admin sign in</h2><p>Sign in to manage your Facebook Page automations.</p><form id="loginForm"><label for="adminPassword">Dashboard password</label><input id="adminPassword" type="password" autocomplete="current-password" required><button type="submit">Sign in</button></form><p id="loginNotice" class="notice"></p></section>
-<section id="dashboard" hidden>
-<div class="panel"><h2>Page connection</h2><p id="pageStatus">Checking Page connection…</p><p class="muted">Facebook Login has been removed. Your Page connects through secure Render settings.</p></div>
-<section class="panel"><h2>Messenger automatic replies</h2><label class="toggle"><input type="checkbox" id="welcomeEnabled"> Enable first-message welcome</label><label for="welcomeMessage">Welcome message</label><textarea id="welcomeMessage" rows="3"></textarea><label class="toggle"><input type="checkbox" id="defaultEnabled"> Enable default reply</label><label for="defaultReply">Default reply</label><textarea id="defaultReply" rows="3"></textarea><button id="saveMessenger">Save Messenger settings</button></section>
-<section class="panel"><h2>Automatic comment private reply</h2><label class="toggle"><input type="checkbox" id="commentEnabled"> Enable private reply to new comments</label><label for="commentReply">Comment reply</label><textarea id="commentReply" rows="3"></textarea><button id="saveComments">Save comment settings</button></section>
-<section class="panel"><h2>Broadcast to eligible contacts</h2><p class="muted">Only contacts eligible under Meta's messaging rules are included. A Page like alone does not make someone eligible to receive a message.</p><label for="broadcastMessage">Message</label><textarea id="broadcastMessage" rows="4" maxlength="2000" placeholder="Write your message"></textarea><label for="broadcastTime">Schedule date and time (leave empty to send now)</label><input id="broadcastTime" type="datetime-local"><button id="sendBroadcast">Send / Schedule</button></section>
-<section class="panel"><div class="section-heading"><h2>Broadcast history</h2><button id="refreshBroadcasts" class="secondary">Refresh</button></div><div id="broadcastHistory"></div></section>
-</section><p id="globalNotice" class="notice" role="status"></p></main><script src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#ffffff"><title>IchaBot — Messenger Automation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app-shell">
+<aside class="sidebar" id="sidebar">
+<a class="brand" href="#"><span class="brand-mark">i</span><span>Icha<span class="brand-light">Bot</span><small>MESSENGER PLATFORM</small></span></a>
+<div class="workspace"><span class="workspace-avatar">I</span><span><b>My workspace</b><small>Facebook Messenger</small></span><span class="chevron">⌄</span></div>
+<div class="side-label">WORKSPACE</div>
+<nav class="side-nav" aria-label="Main navigation">
+<a class="nav-link active" href="#overview" data-section="overview"><span class="nav-icon">▦</span> Overview</a>
+<a class="nav-link" href="#automations" data-section="automations"><span class="nav-icon">⌘</span> Automations</a>
+<a class="nav-link" href="#broadcasts" data-section="broadcasts"><span class="nav-icon">➤</span> Broadcasting</a>
+<a class="nav-link" href="#comments" data-section="comments"><span class="nav-icon">▤</span> Comment replies</a>
+</nav>
+<div class="side-label side-label-lower">MANAGE</div>
+<nav class="side-nav">
+<a class="nav-link" href="#page-connection" data-section="page-connection"><span class="nav-icon">◉</span> Facebook Page</a>
+</nav>
+<div class="sidebar-bottom"><div class="help-card"><span class="help-icon">?</span><b>Need a hand?</b><p>Manage your Messenger setup and automation settings here.</p></div><button id="logoutBtn" class="logout-btn" hidden>↪ Sign out</button><div class="profile"><span class="profile-avatar">I</span><span><b>IchaBot Admin</b><small>Workspace owner</small></span><span class="profile-dots">•••</span></div></div>
+</aside>
+<main class="main-area">
+<header class="topbar"><button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button><div class="breadcrumbs">Workspace <span>/</span> <b id="crumb">Overview</b></div><div class="top-actions"><span class="status-dot"></span><span class="top-status">Dashboard</span><span class="top-avatar">I</span></div></header>
+<section id="loginPanel" class="login-wrap">
+<div class="login-card"><div class="login-logo">i</div><p class="eyebrow">WELCOME BACK</p><h1>Sign in to IchaBot</h1><p class="subtext">Manage your Facebook Messenger conversations and automations.</p>
+<form id="loginForm"><label for="adminPassword">Dashboard password</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="Enter your password" required><button class="primary-btn full-btn" type="submit">Sign in <span>→</span></button></form><p id="loginNotice" class="notice" role="status"></p></div>
+</section>
+<div id="dashboard" hidden>
+<section class="page-section" id="overview">
+<div class="page-heading"><div><p class="eyebrow">YOUR WORKSPACE</p><h1>Good to see you <span class="wave">✦</span></h1><p class="subtext">Here's what's happening with your Messenger automation.</p></div><span class="date-chip">IchaBot workspace</span></div>
+<div class="stats-grid"><article class="stat-card"><div class="stat-top"><span>Automations</span><span class="stat-icon violet">⌘</span></div><strong>3</strong><small>Available automation settings</small></article><article class="stat-card"><div class="stat-top"><span>Broadcast campaigns</span><span class="stat-icon blue">➤</span></div><strong id="broadcastCount">—</strong><small>Campaigns in your history</small></article><article class="stat-card"><div class="stat-top"><span>Facebook connection</span><span class="stat-icon green">◉</span></div><strong id="connectionMetric">Checking</strong><small id="connectionSub">Page connection status</small></article></div>
+<div class="content-grid"><article class="welcome-card"><div class="welcome-copy"><p class="eyebrow">ICHABOT ASSISTANT</p><h2>Make every conversation count.</h2><p>Set up helpful replies, respond to comments automatically, and reach eligible contacts with broadcasts.</p><a class="text-link" href="#automations" data-section="automations">Configure automations <span>→</span></a></div><div class="welcome-art"><div class="bubble bubble-one">Hello! 👋</div><div class="bot-face">i</div><div class="bubble bubble-two">How can I help?</div></div></article>
+<article class="quick-card"><h3>Quick actions</h3><a href="#automations" data-section="automations"><span class="quick-icon violet">⌘</span><span><b>Edit automatic replies</b><small>Welcome and default messages</small></span><span class="arrow">→</span></a><a href="#broadcasts" data-section="broadcasts"><span class="quick-icon blue">➤</span><span><b>Create a broadcast</b><small>Send or schedule a campaign</small></span><span class="arrow">→</span></a><a href="#comments" data-section="comments"><span class="quick-icon orange">▤</span><span><b>Set comment reply</b><small>Reply privately to new comments</small></span><span class="arrow">→</span></a></article></div>
+</section>
+<section class="page-section" id="automations" hidden><div class="page-heading"><div><p class="eyebrow">MESSENGER</p><h1>Automatic replies</h1><p class="subtext">Choose how IchaBot responds when someone messages your Page.</p></div></div>
+<div class="editor-layout"><article class="editor-card"><div class="card-heading"><span class="large-icon violet">✦</span><div><h2>Welcome message</h2><p>Send a friendly greeting when someone messages for the first time.</p></div><label class="switch"><input type="checkbox" id="welcomeEnabled"><span></span></label></div><label for="welcomeMessage">Your welcome message</label><textarea id="welcomeMessage" rows="5" maxlength="2000" placeholder="Hi there! Thanks for reaching out..."></textarea><div class="editor-footer"><span class="hint">Up to 2,000 characters</span><button id="saveMessenger" class="primary-btn save-btn">Save changes <span>✓</span></button></div></article>
+<article class="editor-card"><div class="card-heading"><span class="large-icon blue">↩</span><div><h2>Default reply</h2><p>Reply when a message doesn't trigger your welcome message.</p></div><label class="switch"><input type="checkbox" id="defaultEnabled"><span></span></label></div><label for="defaultReply">Your default reply</label><textarea id="defaultReply" rows="5" maxlength="2000" placeholder="Thanks for your message. We'll be with you soon..."></textarea><div class="editor-footer"><span class="hint">Up to 2,000 characters</span><button id="saveDefault" class="primary-btn save-btn">Save changes <span>✓</span></button></div></article></div>
+</section>
+<section class="page-section" id="comments" hidden><div class="page-heading"><div><p class="eyebrow">FACEBOOK ENGAGEMENT</p><h1>Comment replies</h1><p class="subtext">Automatically send a private reply when someone comments on your Page posts.</p></div></div><article class="editor-card narrow-editor"><div class="card-heading"><span class="large-icon orange">▤</span><div><h2>Private comment reply</h2><p>Send a message to the person who left a new comment.</p></div><label class="switch"><input type="checkbox" id="commentEnabled"><span></span></label></div><label for="commentReply">Your reply message</label><textarea id="commentReply" rows="5" maxlength="2000" placeholder="Thanks for your comment! We have sent you a message."></textarea><div class="editor-footer"><span class="hint">Up to 2,000 characters</span><button id="saveComments" class="primary-btn save-btn">Save changes <span>✓</span></button></div></article></section>
+<section class="page-section" id="broadcasts" hidden><div class="page-heading"><div><p class="eyebrow">REACH YOUR AUDIENCE</p><h1>Broadcasting</h1><p class="subtext">Create a message campaign and send it now or schedule it for later.</p></div></div><div class="broadcast-layout"><article class="editor-card"><div class="card-heading"><span class="large-icon blue">➤</span><div><h2>New broadcast</h2><p>Write your message to eligible Messenger contacts.</p></div></div><label for="broadcastMessage">Message</label><textarea id="broadcastMessage" rows="6" maxlength="2000" placeholder="Write your broadcast message..."></textarea><label for="broadcastTime">Schedule (optional)</label><input id="broadcastTime" type="datetime-local"><p class="compliance-note">Messages can only be sent to contacts eligible under Meta's messaging rules. A Page like alone does not create messaging eligibility.</p><button id="sendBroadcast" class="primary-btn">Send / Schedule broadcast <span>→</span></button></article><article class="history-card"><div class="section-title"><div><h2>Campaign history</h2><p>Recent broadcasts and delivery results.</p></div><button id="refreshBroadcasts" class="ghost-btn">↻ Refresh</button></div><div id="broadcastHistory" class="history-list"><p class="empty-state">Your campaigns will appear here.</p></div></article></div></section>
+<section class="page-section" id="page-connection" hidden><div class="page-heading"><div><p class="eyebrow">CHANNEL SETTINGS</p><h1>Facebook Page</h1><p class="subtext">Check the Page currently connected to IchaBot.</p></div></div><article class="editor-card connection-card"><div class="connection-symbol">f</div><div><h2>Facebook Messenger</h2><p id="pageStatus" class="subtext">Checking Page connection…</p><span id="connectionPill" class="connection-pill">Checking</span></div><p class="compliance-note">Page credentials are managed securely in your Render environment settings. Do not paste access tokens into this dashboard.</p></article></section>
+</div>
+<div id="globalNotice" class="toast" role="status" aria-live="polite"></div>
+</main></div>
+<script src="/app.js" defer></script>
+</body></html>
