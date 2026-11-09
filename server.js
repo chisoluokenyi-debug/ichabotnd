@@ -30,6 +30,8 @@ async function initDatabase(){
  await pool.query(`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS welcome_claimed_at TIMESTAMPTZ`);
  await pool.query(`CREATE TABLE IF NOT EXISTS broadcasts(id BIGSERIAL PRIMARY KEY,page_id TEXT NOT NULL,message TEXT NOT NULL,scheduled_at TIMESTAMPTZ,status TEXT NOT NULL DEFAULT 'scheduled',sent_count INTEGER NOT NULL DEFAULT 0,failed_count INTEGER NOT NULL DEFAULT 0,eligible_count INTEGER NOT NULL DEFAULT 0,locked_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT NOW(),completed_at TIMESTAMPTZ)`);
  await pool.query(`ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS eligible_count INTEGER NOT NULL DEFAULT 0`);
+ await pool.query(`ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS sent_count INTEGER NOT NULL DEFAULT 0`);
+ await pool.query(`ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS failed_count INTEGER NOT NULL DEFAULT 0`);
  await pool.query(`ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ`);
  await pool.query(`CREATE TABLE IF NOT EXISTS processed_events(event_id TEXT PRIMARY KEY,status TEXT NOT NULL DEFAULT 'processing',created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW())`);
  await pool.query(`CREATE INDEX IF NOT EXISTS contacts_activity_idx ON contacts(page_id,last_interaction)`);
