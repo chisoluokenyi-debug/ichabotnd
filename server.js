@@ -115,9 +115,14 @@ async function processDue(){
 }
 app.get("/webhook",(req,res)=>{const mode=req.query["hub.mode"],token=req.query["hub.verify_token"],challenge=req.query["hub.challenge"];if(mode==="subscribe"&&VERIFY_TOKEN&&safeEqual(token,VERIFY_TOKEN))return res.status(200).send(challenge);res.sendStatus(403);});
 app.post("/webhook",(req,res)=>{
- const sig=req.headers["x-hub-signature-256"];if(!APP_SECRET||!sig||!Buffer.isBuffer(req.rawBody))return res.sendStatus(401);
- const expected="sha256="+crypto.createHmac("sha256",APP_SECRET).update(req.rawBody).digest("hex");if(!safeEqual(sig,expected))return res.sendStatus(401);
- let payload;try{payload=JSON.parse(req.rawBody.toString("utf8"));}catch{return res.sendStatus(400);}
+ const sig=req.headers["x-hub-signature-256"];
+ console.log("Meta webhook POST received:",{signaturePresent:!!sig,rawBodyPresent:Buffer.isBuffer(req.rawBody),appSecretConfigured:!!APP_SECRET});
+ if(!APP_SECRET||!sig||!Buffer.isBuffer(req.rawBody)){console.error("Webhook rejected: missing app secret, signature, or raw request body.");return res.sendStatus(401);}
+ const expected="sha256="+crypto.createHmac("sha256",APP_SECRET).update(req.rawBody).digest("hex");
+ if(!safeEqual(sig,expected)){console.error("Webhook rejected: Meta signature does not match META_APP_SECRET.");return res.sendStatus(401);}
+ let payload;try{payload=JSON.parse(req.rawBody.toString("utf8"));}catch{console.error("Webhook rejected: request body is not valid JSON.");return res.sendStatus(400);}
+ const entries=payload.entry||[];
+ console.log("Meta webhook signature accepted:",{object:payload.object||null,entries:entries.length,matchingPageEntries:entries.filter(e=>!PAGE_ID||String(e.id)===PAGE_ID).length,messagingEvents:entries.reduce((n,e)=>n+(e.messaging||[]).length,0),feedChanges:entries.reduce((n,e)=>n+(e.changes||[]).filter(c=>c.field==="feed").length,0),pageIdConfigured:!!PAGE_ID});
  res.sendStatus(200);processPayload(payload).catch(e=>console.error("Webhook handler failed:",e.message));
 });
 app.get("/health",(req,res)=>res.json({status:"ok",app:"IchaBot",adminConfigured:!!ADMIN_PASSWORD,pageConfigured:pageReady(),webhookConfigured:!!(APP_SECRET&&VERIFY_TOKEN)}));
