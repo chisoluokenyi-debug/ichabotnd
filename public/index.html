@@ -1,72 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>IchaBot Dashboard</title>
-  <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-  <header>
-    <h1>IchaBot</h1>
-    <button id="logoutBtn" hidden>Sign out</button>
-  </header>
-
-  <main>
-    <section id="auth">
-      <h2>Welcome to IchaBot</h2>
-      <p>Sign in securely with your Facebook account to connect your Page.</p>
-      <button type="button" id="facebookLoginBtn">Continue with Facebook</button>
-    </section>
-
-    <section id="dashboard" hidden>
-      <h2>Your dashboard</h2>
-      <p id="notice"></p>
-
-      <section class="panel">
-        <h3>Connect Facebook Page</h3>
-        <button id="facebookBtn">Connect Facebook</button>
-        <label for="pageSelect">Choose your Page</label>
-        <select id="pageSelect">
-          <option value="">No Page connected</option>
-        </select>
-        <button id="refreshBtn">Refresh Pages</button>
-      </section>
-
-      <section class="panel">
-        <h3>Messenger automatic replies</h3>
-        <label><input type="checkbox" id="messageWelcome"> Enable first-message welcome</label>
-        <textarea id="welcomeMessage" placeholder="Welcome message"></textarea>
-        <label><input type="checkbox" id="messageDefault"> Enable default reply</label>
-        <textarea id="defaultReply" placeholder="Default Messenger reply"></textarea>
-        <button id="saveMessage">Save Messenger settings</button>
-      </section>
-
-      <section class="panel">
-        <h3>Automatic comment replies</h3>
-        <label><input type="checkbox" id="commentDefault"> Enable private reply to comments</label>
-        <textarea id="commentReply" placeholder="Private comment reply"></textarea>
-        <button id="saveComment">Save comment settings</button>
-      </section>
-
-      <section class="panel">
-        <h3>Broadcast and schedule</h3>
-        <textarea id="campaignMessage" placeholder="Write your broadcast message"></textarea>
-        <label for="campaignTime">Date and time</label>
-        <input id="campaignTime" type="datetime-local">
-        <p>Leave date and time empty to send immediately. Choose a future date and time to schedule.</p>
-        <button id="scheduleBtn">Send / Schedule broadcast</button>
-      </section>
-
-      <section class="panel">
-        <h3>Campaign reports</h3>
-        <button id="campaignRefresh">Refresh reports</button>
-        <div id="campaignList"></div>
-      </section>
-
-    </section>
-  </main>
-
-  <script src="/app.js"></script>
-</body>
-</html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111827"><title>IchaBot Dashboard</title><link rel="stylesheet" href="/style.css"></head>
+<body><header><h1>IchaBot</h1><button id="logoutBtn" class="secondary" hidden>Sign out</button></header><main>
+<section id="loginPanel" class="panel narrow"><h2>Admin sign in</h2><p>Sign in to manage your Facebook Page automations.</p><form id="loginForm"><label for="adminPassword">Dashboard password</label><input id="adminPassword" type="password" autocomplete="current-password" required><button type="submit">Sign in</button></form><p id="loginNotice" class="notice"></p></section>
+<section id="dashboard" hidden>
+<div class="panel"><h2>Page connection</h2><p id="pageStatus">Checking Page connection…</p><p class="muted">Facebook Login has been removed. Your Page connects through secure Render settings.</p></div>
+<section class="panel"><h2>Messenger automatic replies</h2><label class="toggle"><input type="checkbox" id="welcomeEnabled"> Enable first-message welcome</label><label for="welcomeMessage">Welcome message</label><textarea id="welcomeMessage" rows="3"></textarea><label class="toggle"><input type="checkbox" id="defaultEnabled"> Enable default reply</label><label for="defaultReply">Default reply</label><textarea id="defaultReply" rows="3"></textarea><button id="saveMessenger">Save Messenger settings</button></section>
+<section class="panel"><h2>Automatic comment private reply</h2><label class="toggle"><input type="checkbox" id="commentEnabled"> Enable private reply to new comments</label><label for="commentReply">Comment reply</label><textarea id="commentReply" rows="3"></textarea><button id="saveComments">Save comment settings</button></section>
+<section class="panel"><h2>Broadcast to eligible contacts</h2><p class="muted">Only contacts eligible under Meta's messaging rules are included. A Page like alone does not make someone eligible to receive a message.</p><label for="broadcastMessage">Message</label><textarea id="broadcastMessage" rows="4" maxlength="2000" placeholder="Write your message"></textarea><label for="broadcastTime">Schedule date and time (leave empty to send now)</label><input id="broadcastTime" type="datetime-local"><button id="sendBroadcast">Send / Schedule</button></section>
+<section class="panel"><div class="section-heading"><h2>Broadcast history</h2><button id="refreshBroadcasts" class="secondary">Refresh</button></div><div id="broadcastHistory"></div></section>
+</section><p id="globalNotice" class="notice" role="status"></p></main><script src="/app.js"></script></body></html>
