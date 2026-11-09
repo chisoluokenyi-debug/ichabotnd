@@ -3,7 +3,7 @@ const express=require("express"),axios=require("axios"),path=require("path"),cry
 const app=express(),PORT=process.env.PORT||3000;
 const GRAPH_VERSION=(process.env.META_GRAPH_VERSION||"v25.0").replace(/^\/?/,"v").replace(/^vv/,"v"),GRAPH_BASE="https://graph.facebook.com/"+GRAPH_VERSION;
 const PAGE_ID=String(process.env.PAGE_ID||"").trim(),PAGE_ACCESS_TOKEN=String(process.env.PAGE_ACCESS_TOKEN||"").trim(),PAGE_NAME=String(process.env.PAGE_NAME||"Connected Facebook Page").trim();
-const APP_SECRET=process.env.META_APP_SECRET||"",VERIFY_TOKEN=process.env.META_WEBHOOK_VERIFY_TOKEN||"",ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||"",SESSION_SECRET=process.env.SESSION_SECRET||"",META_APP_ID=String(process.env.META_APP_ID||"").trim(),FACEBOOK_ADMIN_EMAIL=String(process.env.FACEBOOK_ADMIN_EMAIL||"").trim().toLowerCase();
+const APP_SECRET=process.env.META_APP_SECRET||"",VERIFY_TOKEN=process.env.META_WEBHOOK_VERIFY_TOKEN||"",ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||"",SESSION_SECRET=process.env.SESSION_SECRET||"",META_APP_ID=String(process.env.META_APP_ID||"").trim(),FACEBOOK_ADMIN_ID=String(process.env.FACEBOOK_ADMIN_ID||"").trim();
 const APP_BASE_URL=(process.env.APP_BASE_URL||process.env.RENDER_EXTERNAL_URL||"https://ichabotnd.onrender.com").replace(/\/+$/,"");
 if(!process.env.DATABASE_URL)throw new Error("DATABASE_URL is missing.");
 if(SESSION_SECRET.length<32)throw new Error("SESSION_SECRET must be at least 32 characters.");
@@ -21,7 +21,7 @@ app.use(session({store:new PgSession({pool,tableName:"user_sessions",createTable
 app.use(express.static(path.join(__dirname,"public")));
 const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 const requireAdmin=(req,res,next)=>req.session.adminAuthenticated?next():res.status(401).json({error:"Please sign in to the IchaBot dashboard."});
-const pageReady=()=>Boolean(PAGE_ID&&PAGE_ACCESS_TOKEN),facebookLoginReady=()=>Boolean(META_APP_ID&&APP_SECRET&&FACEBOOK_ADMIN_EMAIL);
+const pageReady=()=>Boolean(PAGE_ID&&PAGE_ACCESS_TOKEN),facebookLoginReady=()=>Boolean(META_APP_ID&&APP_SECRET&&FACEBOOK_ADMIN_ID);
 async function graphPost(endpoint,data){const r=await axios.post(GRAPH_BASE+"/"+endpoint,data,{params:{access_token:PAGE_ACCESS_TOKEN},timeout:20000});return r.data;}
 async function initDatabase(){
  await pool.query(`CREATE TABLE IF NOT EXISTS settings(page_id TEXT PRIMARY KEY,welcome_enabled BOOLEAN NOT NULL DEFAULT TRUE,welcome_message TEXT NOT NULL DEFAULT 'Hello! Thanks for messaging us. How can we help you today?',default_enabled BOOLEAN NOT NULL DEFAULT TRUE,default_reply TEXT NOT NULL DEFAULT 'Thanks for your message. We will get back to you shortly.',comment_enabled BOOLEAN NOT NULL DEFAULT TRUE,comment_reply TEXT NOT NULL DEFAULT 'Thanks for your comment! We have sent you a private message.',updated_at TIMESTAMPTZ DEFAULT NOW())`);
@@ -75,7 +75,38 @@ async function processComment(v){
  await finishEvent(eventId,true);
 }
 async function processPayload(payload){for(const entry of payload.entry||[]){if(PAGE_ID&&String(entry.id)!==PAGE_ID)continue;for(const e of entry.messaging||[]){try{await processMessage(e);}catch(err){console.error("Messenger event failed:",err.response?.data||err.message);}}for(const c of entry.changes||[]){if(c.field==="feed")try{await processComment(c.value);}catch(err){console.error("Comment event failed:",err.response?.data||err.message);}}}}
-app.get("/auth/facebook",(req,res)=>{\n if(!facebookLoginReady())return res.status(503).send("Facebook Login is not configured. Add META_APP_ID and FACEBOOK_ADMIN_EMAIL in Render Environment.");\n const state=crypto.randomBytes(32).toString("hex");req.session.facebookOAuthState=state;\n req.session.save(err=>{if(err)return res.status(500).send("Could not start Facebook Login.");const redirectUri=APP_BASE_URL+"/auth/facebook/callback";const params=new URLSearchParams({client_id:META_APP_ID,redirect_uri:redirectUri,state,response_type:"code",scope:"email"});res.redirect("https://www.facebook.com/"+GRAPH_VERSION+"/dialog/oauth?"+params.toString());});\n});\napp.get("/auth/facebook/callback",asyncRoute(async(req,res)=>{\n const state=String(req.query.state||""),expected=String(req.session.facebookOAuthState||"");delete req.session.facebookOAuthState;\n if(!expected||!safeEqual(state,expected))return res.status(400).send("Facebook Login could not be verified. Please try again.");\n if(req.query.error)return res.redirect("/?facebook_login_error=cancelled");\n const code=String(req.query.code||"");if(!code)return res.status(400).send("Facebook did not return a login code.");\n const redirectUri=APP_BASE_URL+"/auth/facebook/callback";\n const token=await axios.get("https://graph.facebook.com/"+GRAPH_VERSION+"/oauth/access_token",{params:{client_id:META_APP_ID,client_secret:APP_SECRET,redirect_uri:redirectUri,code},timeout:20000});\n const profile=await axios.get("https://graph.facebook.com/"+GRAPH_VERSION+"/me",{params:{fields:"id,email",access_token:token.data.access_token},timeout:20000});\n const email=String(profile.data.email||"").trim().toLowerCase();\n if(!email||email!==FACEBOOK_ADMIN_EMAIL)return res.status(403).send("This Facebook account is not authorized to access the IchaBot dashboard.");\n req.session.regenerate(err=>{if(err)return res.status(500).send("Could not start secure session.");req.session.adminAuthenticated=true;req.session.facebookUserId=String(profile.data.id||"");req.session.save(e=>e?res.status(500).send("Could not save your login session."):res.redirect("/"));});\n}));\napp.post("/api/login",(req,res)=>{
+app.get("/auth/facebook",(req,res)=>{
+ if(!facebookLoginReady())return res.status(503).send("Facebook Login is not configured. Add META_APP_ID and FACEBOOK_ADMIN_ID in Render Environment.");
+ const state=crypto.randomBytes(32).toString("hex");
+ req.session.facebookOAuthState=state;
+ req.session.save(err=>{
+  if(err)return res.status(500).send("Could not start Facebook Login.");
+  const redirectUri=APP_BASE_URL+"/auth/facebook/callback";
+  const params=new URLSearchParams({client_id:META_APP_ID,redirect_uri:redirectUri,state,response_type:"code"});
+  res.redirect("https://www.facebook.com/"+GRAPH_VERSION+"/dialog/oauth?"+params.toString());
+ });
+});
+app.get("/auth/facebook/callback",asyncRoute(async(req,res)=>{
+ const state=String(req.query.state||"");
+ const expected=String(req.session.facebookOAuthState||"");
+ delete req.session.facebookOAuthState;
+ if(!expected||!safeEqual(state,expected))return res.status(400).send("Facebook Login could not be verified. Please try again.");
+ if(req.query.error)return res.redirect("/?facebook_login_error=cancelled");
+ const code=String(req.query.code||"");
+ if(!code)return res.status(400).send("Facebook did not return a login code.");
+ const redirectUri=APP_BASE_URL+"/auth/facebook/callback";
+ const token=await axios.get("https://graph.facebook.com/"+GRAPH_VERSION+"/oauth/access_token",{params:{client_id:META_APP_ID,client_secret:APP_SECRET,redirect_uri:redirectUri,code},timeout:20000});
+ const profile=await axios.get("https://graph.facebook.com/"+GRAPH_VERSION+"/me",{params:{fields:"id",access_token:token.data.access_token},timeout:20000});
+ const facebookId=String(profile.data.id||"");
+ if(!facebookId||facebookId!==FACEBOOK_ADMIN_ID)return res.status(403).send("This Facebook account is not authorized to access the IchaBot dashboard.");
+ req.session.regenerate(err=>{
+  if(err)return res.status(500).send("Could not start secure session.");
+  req.session.adminAuthenticated=true;
+  req.session.facebookUserId=facebookId;
+  req.session.save(e=>e?res.status(500).send("Could not save your login session."):res.redirect("/"));
+ });
+}));
+app.post("/api/login",(req,res)=>{
  if(!ADMIN_PASSWORD)return res.status(503).json({error:"ADMIN_PASSWORD must be added to Render Environment before sign-in."});
  if(!safeEqual(req.body.password,ADMIN_PASSWORD))return res.status(401).json({error:"Incorrect dashboard password."});
  req.session.regenerate(err=>{if(err)return res.status(500).json({error:"Could not start secure session."});req.session.adminAuthenticated=true;req.session.save(e=>e?res.status(500).json({error:"Could not save session."}):res.json({success:true}));});
