@@ -60,21 +60,38 @@ async function processMessage(event){
  }catch(e){if(eventId)await finishEvent(eventId,false);throw e;}
 }
 async function processComment(v){
- if(!pageReady()||!v||v.item!=="comment"||v.verb!=="add")return;
- const id=v.comment_id||v.id;if(!id||(v.from&&String(v.from.id)===PAGE_ID))return;
- const eventId="comment:"+PAGE_ID+":"+id;if(!(await claimEvent(eventId)))return;
- const s=await getSettings();
- if(s.comment_enabled){
-  try{await graphPost(id+"/likes",{});console.log("Comment liked successfully:",id);}
+ if(!pageReady()||!v){console.warn("Comment event skipped: Page connection or event value missing.");return;}
+ if(v.item!=="comment"||v.verb!=="add"){console.log("Feed event is not a new comment:",{item:v.item||null,verb:v.verb||null});return;}
+ const id=String(v.comment_id||v.id||"");
+ if(!id){console.warn("New comment event has no comment_id.");return;}
+ if(v.from&&String(v.from.id)===PAGE_ID){console.log("Ignoring comment authored by the connected Page.");return;}
+ const eventId="comment:"+PAGE_ID+":"+id;
+ if(!(await claimEvent(eventId))){console.log("Comment event already processed or currently claimed.");return;}
+ try{
+  const s=await getSettings();
+  if(!s||!s.comment_enabled){console.log("Comment automation is disabled in saved settings.");await finishEvent(eventId,true);return;}
+  let likeOk=false,replyOk=!s.comment_reply;
+  try{await graphPost(id+"/likes",{});likeOk=true;console.log("Comment like succeeded.");}
   catch(e){console.error("Comment like failed:",e.response?.data||e.message);}
   if(s.comment_reply){
-   try{await graphPost(id+"/private_replies",{message:s.comment_reply});console.log("Private comment reply sent successfully:",id);}
+   try{await graphPost(id+"/private_replies",{message:s.comment_reply});replyOk=true;console.log("Private comment reply succeeded.");}
    catch(e){console.error("Private comment reply failed:",e.response?.data||e.message);}
   }
- }
- await finishEvent(eventId,true);
+  await finishEvent(eventId,replyOk);
+  if(!replyOk)console.error("Comment event marked failed so it can be retried; like succeeded:",likeOk);
+ }catch(e){await finishEvent(eventId,false);throw e;}
 }
-async function processPayload(payload){for(const entry of payload.entry||[]){if(PAGE_ID&&String(entry.id)!==PAGE_ID)continue;for(const e of entry.messaging||[]){try{await processMessage(e);}catch(err){console.error("Messenger event failed:",err.response?.data||err.message);}}for(const c of entry.changes||[]){if(c.field==="feed")try{await processComment(c.value);}catch(err){console.error("Comment event failed:",err.response?.data||err.message);}}}}
+async function processPayload(payload){
+ const entries=Array.isArray(payload?.entry)?payload.entry:[];
+ for(const entry of entries){
+  const matches=!PAGE_ID||String(entry.id)===PAGE_ID;
+  const changes=Array.isArray(entry.changes)?entry.changes:[];
+  console.log("Meta webhook entry:",{pageIdMatches:matches,messagingEvents:Array.isArray(entry.messaging)?entry.messaging.length:0,changes:changes.map(c=>({field:c.field||null,item:c.value?.item||null,verb:c.value?.verb||null,hasCommentId:!!(c.value?.comment_id||c.value?.id),hasPostId:!!c.value?.post_id}))});
+  if(!matches){console.warn("Webhook entry ignored because its Page ID does not match PAGE_ID.");continue;}
+  for(const e of entry.messaging||[]){try{await processMessage(e);}catch(err){console.error("Messenger event failed:",err.response?.data||err.message);}}
+  for(const change of changes){if(change.field==="feed")try{await processComment(change.value);}catch(err){console.error("Comment event failed:",err.response?.data||err.message);}}
+ }
+}
 app.get("/auth/facebook",(req,res)=>{
  if(!facebookLoginReady())return res.status(503).send("Facebook Login is not configured. Add META_APP_ID and FACEBOOK_ADMIN_ID in Render Environment.");
  const state=crypto.randomBytes(32).toString("hex");
@@ -166,7 +183,7 @@ app.post("/webhook",(req,res)=>{
  if(!safeEqual(sig,expected)){console.error("Webhook rejected: Meta signature does not match META_APP_SECRET.");return res.sendStatus(401);}
  let payload;try{payload=JSON.parse(req.rawBody.toString("utf8"));}catch{console.error("Webhook rejected: request body is not valid JSON.");return res.sendStatus(400);}
  const entries=payload.entry||[];
- console.log("Meta webhook signature accepted:",{object:payload.object||null,entries:entries.length,matchingPageEntries:entries.filter(e=>!PAGE_ID||String(e.id)===PAGE_ID).length,messagingEvents:entries.reduce((n,e)=>n+(e.messaging||[]).length,0),feedChanges:entries.reduce((n,e)=>n+(e.changes||[]).filter(c=>c.field==="feed").length,0),pageIdConfigured:!!PAGE_ID});
+ console.log("Meta webhook signature accepted:",{object:payload.object||null,entries:entries.length,matchingPageEntries:entries.filter(e=>!PAGE_ID||String(e.id)===PAGE_ID).length,messagingEvents:entries.reduce((n,e)=>n+(Array.isArray(e.messaging)?e.messaging.length:0),0),changes:entries.flatMap(e=>(Array.isArray(e.changes)?e.changes:[]).map(c=>({field:c.field||null,item:c.value?.item||null,verb:c.value?.verb||null,hasCommentId:!!(c.value?.comment_id||c.value?.id)}))),pageIdConfigured:!!PAGE_ID});
  res.sendStatus(200);processPayload(payload).catch(e=>console.error("Webhook handler failed:",e.message));
 });
 app.get("/health",(req,res)=>res.json({status:"ok",app:"IchaBot",adminConfigured:!!ADMIN_PASSWORD,pageConfigured:pageReady(),webhookConfigured:!!(APP_SECRET&&VERIFY_TOKEN)}));
