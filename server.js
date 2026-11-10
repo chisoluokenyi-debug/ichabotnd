@@ -3,6 +3,17 @@ const express=require("express"),axios=require("axios"),path=require("path"),cry
 const app=express(),PORT=process.env.PORT||3000;
 const GRAPH_VERSION=(process.env.META_GRAPH_VERSION||"v25.0").replace(/^\/?/,"v").replace(/^vv/,"v"),GRAPH_BASE="https://graph.facebook.com/"+GRAPH_VERSION;
 const LEGACY_PAGE_ID=String(process.env.PAGE_ID||"").trim(),LEGACY_PAGE_TOKEN=String(process.env.PAGE_ACCESS_TOKEN||"").trim(),LEGACY_PAGE_NAME=String(process.env.PAGE_NAME||"Connected Facebook Page").trim();
+function configuredPageCredentials(){
+ const pages=[];
+ if(LEGACY_PAGE_ID&&LEGACY_PAGE_TOKEN)pages.push({id:LEGACY_PAGE_ID,token:LEGACY_PAGE_TOKEN,name:LEGACY_PAGE_NAME});
+ for(const key of Object.keys(process.env)){
+  const m=key.match(/^PAGE_(\\d+)_ID$/);
+  if(!m)continue;
+  const n=m[1],id=String(process.env[key]||"").trim(),token=String(process.env["PAGE_"+n+"_ACCESS_TOKEN"]||"").trim(),name=String(process.env["PAGE_"+n+"_NAME"]||("Facebook Page "+n)).trim();
+  if(id&&token&&!pages.some(p=>p.id===id))pages.push({id,token,name});
+ }
+ return pages;
+}
 const APP_SECRET=process.env.META_APP_SECRET||"",VERIFY_TOKEN=process.env.META_WEBHOOK_VERIFY_TOKEN||"",ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||"",SESSION_SECRET=process.env.SESSION_SECRET||"",META_APP_ID=String(process.env.META_APP_ID||"").trim(),FACEBOOK_ADMIN_ID=String(process.env.FACEBOOK_ADMIN_ID||"").trim();
 const APP_BASE_URL=(process.env.APP_BASE_URL||process.env.RENDER_EXTERNAL_URL||"https://ichabotnd.onrender.com").replace(/\/+$/,"");
 if(!process.env.DATABASE_URL)throw new Error("DATABASE_URL is missing.");
@@ -10,7 +21,7 @@ if(SESSION_SECRET.length<32)throw new Error("SESSION_SECRET must be at least 32 
 if(!APP_SECRET)console.warn("META_APP_SECRET is not configured.");
 if(!VERIFY_TOKEN)console.warn("META_WEBHOOK_VERIFY_TOKEN is not configured.");
 if(!ADMIN_PASSWORD)console.warn("ADMIN_PASSWORD is not configured; dashboard login will remain locked.");
-if(!LEGACY_PAGE_ID||!LEGACY_PAGE_TOKEN)console.warn("No legacy Page credentials found; connect a Page in the dashboard.");
+if(!configuredPageCredentials().length)console.warn("No Page credentials found in Render Environment; add PAGE_1_ID and PAGE_1_ACCESS_TOKEN or connect a Page in the dashboard.");
 const pool=new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="true"?{rejectUnauthorized:false}:undefined});
 function personalizeMessage(message,names={}){const first=String(names.first_name||"").trim(),middle=String(names.middle_name||"").trim(),last=String(names.last_name||"").trim(),full=String(names.full_name||[first,middle,last].filter(Boolean).join(" ")).trim();return String(message||"").replace(/\{\s*(first_name|middle_name|last_name|full_name)\s*\}/gi,(_,key)=>({first_name:first,middle_name:middle,last_name:last,full_name:full}[key.toLowerCase()]||""));}
 pool.on("error",e=>console.error("Database error:",e.message));
@@ -33,7 +44,14 @@ const pageReady=p=>Boolean(p&&p.page_id&&p.accessToken);
 async function graphPost(page,endpoint,data){const r=await axios.post(GRAPH_BASE+"/"+endpoint,data,{params:{access_token:page.accessToken},timeout:20000});return r.data;}
 async function initDatabase(){
  await pool.query(`CREATE TABLE IF NOT EXISTS facebook_pages(page_id TEXT PRIMARY KEY,page_name TEXT NOT NULL,access_token_encrypted TEXT NOT NULL,active BOOLEAN NOT NULL DEFAULT TRUE,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW())`);
- if(LEGACY_PAGE_ID&&LEGACY_PAGE_TOKEN){try{const p=await axios.get(GRAPH_BASE+"/me",{params:{fields:"id,name",access_token:LEGACY_PAGE_TOKEN},timeout:15000});if(String(p.data.id)!==LEGACY_PAGE_ID)throw new Error("PAGE_ID does not match PAGE_ACCESS_TOKEN.");await pool.query(`INSERT INTO facebook_pages(page_id,page_name,access_token_encrypted) VALUES($1,$2,$3) ON CONFLICT(page_id) DO UPDATE SET page_name=EXCLUDED.page_name,access_token_encrypted=EXCLUDED.access_token_encrypted,active=TRUE,updated_at=NOW()`,[LEGACY_PAGE_ID,String(p.data.name||LEGACY_PAGE_NAME),encryptToken(LEGACY_PAGE_TOKEN)]);}catch(e){console.error("Could not import existing Render Page credentials:",e.response?.data?.error?.message||e.message);}}
+ for(const configured of configuredPageCredentials()){
+  try{
+   const p=await axios.get(GRAPH_BASE+"/"+configured.id,{params:{fields:"id,name",access_token:configured.token},timeout:15000});
+   if(String(p.data.id)!==configured.id)throw new Error("The configured Page ID does not match its access token.");
+   await pool.query(`INSERT INTO facebook_pages(page_id,page_name,access_token_encrypted) VALUES($1,$2,$3) ON CONFLICT(page_id) DO UPDATE SET page_name=EXCLUDED.page_name,access_token_encrypted=EXCLUDED.access_token_encrypted,active=TRUE,updated_at=NOW()`,[configured.id,String(p.data.name||configured.name),encryptToken(configured.token)]);
+   console.log("Imported Render Page credentials:",configured.id);
+  }catch(e){console.error("Could not import Render Page credentials for "+configured.id+":",e.response?.data?.error?.message||e.message);}
+ }
  await pool.query(`CREATE TABLE IF NOT EXISTS settings(page_id TEXT PRIMARY KEY,welcome_enabled BOOLEAN NOT NULL DEFAULT TRUE,welcome_message TEXT NOT NULL DEFAULT 'Hello! Thanks for messaging us. How can we help you today?',default_enabled BOOLEAN NOT NULL DEFAULT TRUE,default_reply TEXT NOT NULL DEFAULT 'Thanks for your message. We will get back to you shortly.',comment_enabled BOOLEAN NOT NULL DEFAULT TRUE,comment_reply TEXT NOT NULL DEFAULT 'Thanks for your comment! We have sent you a private message.',updated_at TIMESTAMPTZ DEFAULT NOW())`);
  await pool.query(`CREATE TABLE IF NOT EXISTS saved_messages(id BIGSERIAL PRIMARY KEY,page_id TEXT NOT NULL,title TEXT NOT NULL,message TEXT NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW())`);
  await pool.query(`CREATE INDEX IF NOT EXISTS saved_messages_page_idx ON saved_messages(page_id,updated_at DESC)`);
