@@ -12,6 +12,7 @@ if(!VERIFY_TOKEN)console.warn("META_WEBHOOK_VERIFY_TOKEN is not configured.");
 if(!ADMIN_PASSWORD)console.warn("ADMIN_PASSWORD is not configured; dashboard login will remain locked.");
 if(!PAGE_ID||!PAGE_ACCESS_TOKEN)console.warn("PAGE_ID and PAGE_ACCESS_TOKEN are required to connect the Page.");
 const pool=new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="true"?{rejectUnauthorized:false}:undefined});
+function personalizeMessage(message,names={}){const first=String(names.first_name||"").trim(),middle=String(names.middle_name||"").trim(),last=String(names.last_name||"").trim(),full=String(names.full_name||[first,middle,last].filter(Boolean).join(" ")).trim();return String(message||"").replace(/\{\s*(first_name|middle_name|last_name|full_name)\s*\}/gi,(_,key)=>({first_name:first,middle_name:middle,last_name:last,full_name:full}[key.toLowerCase()]||""));}
 pool.on("error",e=>console.error("Database error:",e.message));
 const safeEqual=(a,b)=>{const x=Buffer.from(String(a||"")),y=Buffer.from(String(b||""));return x.length===y.length&&crypto.timingSafeEqual(x,y);};
 app.set("trust proxy",1);app.use(helmet({contentSecurityPolicy:false}));
@@ -30,6 +31,9 @@ async function initDatabase(){
  await pool.query(`CREATE TABLE IF NOT EXISTS contacts(page_id TEXT NOT NULL,psid TEXT NOT NULL,last_interaction TIMESTAMPTZ DEFAULT NOW(),first_message BOOLEAN NOT NULL DEFAULT TRUE,welcome_claimed_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT NOW(),PRIMARY KEY(page_id,psid))`);
  await pool.query(`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS first_message BOOLEAN NOT NULL DEFAULT TRUE`);
  await pool.query(`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS welcome_claimed_at TIMESTAMPTZ`);
+ await pool.query(`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS first_name TEXT`);
+ await pool.query(`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS middle_name TEXT`);
+ await pool.query(`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS last_name TEXT`);
  await pool.query(`CREATE TABLE IF NOT EXISTS broadcasts(id BIGSERIAL PRIMARY KEY,page_id TEXT NOT NULL,message TEXT NOT NULL,scheduled_at TIMESTAMPTZ,status TEXT NOT NULL DEFAULT 'scheduled',sent_count INTEGER NOT NULL DEFAULT 0,failed_count INTEGER NOT NULL DEFAULT 0,eligible_count INTEGER NOT NULL DEFAULT 0,locked_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT NOW(),completed_at TIMESTAMPTZ)`);
  await pool.query(`ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS eligible_count INTEGER NOT NULL DEFAULT 0`);
  await pool.query(`ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`);
@@ -44,7 +48,7 @@ async function initDatabase(){
  console.log("IchaBot database is ready.");
 }
 async function getSettings(){if(!PAGE_ID)return null;await pool.query(`INSERT INTO settings(page_id) VALUES($1) ON CONFLICT(page_id) DO NOTHING`,[PAGE_ID]);return (await pool.query(`SELECT * FROM settings WHERE page_id=$1`,[PAGE_ID])).rows[0];}
-async function sendMessage(psid,message){if(!pageReady())throw new Error("Facebook Page connection is not configured.");return graphPost(PAGE_ID+"/messages",{recipient:{id:psid},messaging_type:"RESPONSE",message:{text:message}});}
+async function sendMessage(psid,message){if(!pageReady())throw new Error("Facebook Page connection is not configured.");const r=await pool.query("SELECT first_name,middle_name,last_name FROM contacts WHERE page_id=$1 AND psid=$2",[PAGE_ID,String(psid)]);const n=r.rows[0]||{};const full=[n.first_name,n.middle_name,n.last_name].filter(Boolean).join(" ");return graphPost(PAGE_ID+"/messages",{recipient:{id:psid},messaging_type:"RESPONSE",message:{text:personalizeMessage(message,{...n,full_name:full})}});}
 async function claimEvent(id){const r=await pool.query(`INSERT INTO processed_events(event_id,status,updated_at) VALUES($1,'processing',NOW()) ON CONFLICT(event_id) DO UPDATE SET status='processing',updated_at=NOW() WHERE processed_events.status='failed' OR (processed_events.status='processing' AND processed_events.updated_at<NOW()-INTERVAL '5 minutes') RETURNING event_id`,[id]);return r.rowCount>0;}
 async function finishEvent(id,ok){await pool.query(`UPDATE processed_events SET status=$2,updated_at=NOW() WHERE event_id=$1`,[id,ok?"processed":"failed"]);}
 async function processMessage(event){
@@ -54,6 +58,7 @@ async function processMessage(event){
  try{
   const s=await getSettings();
   await pool.query(`INSERT INTO contacts(page_id,psid,last_interaction,first_message) VALUES($1,$2,NOW(),TRUE) ON CONFLICT(page_id,psid) DO UPDATE SET last_interaction=NOW()`,[PAGE_ID,psid]);
+  try{const profile=await axios.get(GRAPH_BASE+"/"+psid,{params:{fields:"first_name,last_name",access_token:PAGE_ACCESS_TOKEN},timeout:12000});await pool.query("UPDATE contacts SET first_name=COALESCE(NULLIF($1,''),first_name),last_name=COALESCE(NULLIF($2,''),last_name) WHERE page_id=$3 AND psid=$4",[String(profile.data.first_name||""),String(profile.data.last_name||""),PAGE_ID,psid]);}catch(profileError){console.warn("Messenger profile name unavailable; continuing without profile name.");}
   const c=await pool.query(`UPDATE contacts SET welcome_claimed_at=NOW() WHERE page_id=$1 AND psid=$2 AND first_message=TRUE AND (welcome_claimed_at IS NULL OR welcome_claimed_at<NOW()-INTERVAL '5 minutes') RETURNING psid`,[PAGE_ID,psid]);
   const first=c.rowCount>0,reply=first&&s.welcome_enabled?s.welcome_message:(s.default_enabled?s.default_reply:"");
   if(reply){try{await sendMessage(psid,reply);if(first)await pool.query(`UPDATE contacts SET first_message=FALSE,welcome_claimed_at=NULL WHERE page_id=$1 AND psid=$2`,[PAGE_ID,psid]);}catch(e){if(first)await pool.query(`UPDATE contacts SET welcome_claimed_at=NULL WHERE page_id=$1 AND psid=$2`,[PAGE_ID,psid]);throw e;}}
@@ -76,7 +81,7 @@ async function processComment(v){
   try{await graphPost(id+"/likes",{});likeOk=true;console.log("Comment like succeeded.");}
   catch(e){console.error("Comment like failed:",e.response?.data||e.message);}
   if(s.comment_reply){
-   try{await graphPost(id+"/private_replies",{message:s.comment_reply});replyOk=true;console.log("Private comment reply succeeded.");}
+   try{await graphPost(id+"/private_replies",{message:personalizeMessage(s.comment_reply,{first_name:String(v.from?.name||"").trim().split(/\s+/)[0]||"",full_name:String(v.from?.name||"").trim()})});replyOk=true;console.log("Private comment reply succeeded.");}
    catch(e){console.error("Private comment reply failed:",e.response?.data||e.message);}
   }
   await finishEvent(eventId,replyOk);
