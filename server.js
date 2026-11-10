@@ -7,7 +7,7 @@ function configuredPageCredentials(){
  const pages=[];
  if(LEGACY_PAGE_ID&&LEGACY_PAGE_TOKEN)pages.push({id:LEGACY_PAGE_ID,token:LEGACY_PAGE_TOKEN,name:LEGACY_PAGE_NAME});
  for(const key of Object.keys(process.env)){
-  const m=key.match(/^PAGE_(\\d+)_ID$/);
+  const m=key.match(/^PAGE_(\d+)_ID$/);
   if(!m)continue;
   const n=m[1],id=String(process.env[key]||"").trim(),token=String(process.env["PAGE_"+n+"_ACCESS_TOKEN"]||"").trim(),name=String(process.env["PAGE_"+n+"_NAME"]||("Facebook Page "+n)).trim();
   if(id&&token&&!pages.some(p=>p.id===id))pages.push({id,token,name});
