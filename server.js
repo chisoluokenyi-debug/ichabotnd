@@ -46,10 +46,16 @@ async function initDatabase(){
  await pool.query(`CREATE TABLE IF NOT EXISTS facebook_pages(page_id TEXT PRIMARY KEY,page_name TEXT NOT NULL,access_token_encrypted TEXT NOT NULL,active BOOLEAN NOT NULL DEFAULT TRUE,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW())`);
  for(const configured of configuredPageCredentials()){
   try{
-   const p=await axios.get(GRAPH_BASE+"/"+configured.id,{params:{fields:"id,name",access_token:configured.token},timeout:15000});
-   if(String(p.data.id)!==configured.id)throw new Error("The configured Page ID does not match its access token.");
+   const p=await axios.get(GRAPH_BASE+"/me",{params:{fields:"id,name",access_token:configured.token},timeout:15000});
+   if(String(p.data.id)!==configured.id)throw new Error("The configured Page ID does not match this Page access token (token resolves to "+String(p.data.id||"unknown") + ").");
    await pool.query(`INSERT INTO facebook_pages(page_id,page_name,access_token_encrypted) VALUES($1,$2,$3) ON CONFLICT(page_id) DO UPDATE SET page_name=EXCLUDED.page_name,access_token_encrypted=EXCLUDED.access_token_encrypted,active=TRUE,updated_at=NOW()`,[configured.id,String(p.data.name||configured.name),encryptToken(configured.token)]);
    console.log("Imported Render Page credentials:",configured.id);
+   try{
+    await axios.post(GRAPH_BASE+"/"+configured.id+"/subscribed_apps",{}, {params:{subscribed_fields:"messages,messaging_postbacks,feed",access_token:configured.token},timeout:15000});
+    console.log("Subscribed IchaBot to Page webhooks:",configured.id);
+   }catch(subscriptionError){
+    console.error("Page imported but webhook subscription failed for "+configured.id+":",subscriptionError.response?.data?.error?.message||subscriptionError.message);
+   }
   }catch(e){console.error("Could not import Render Page credentials for "+configured.id+":",e.response?.data?.error?.message||e.message);}
  }
  await pool.query(`CREATE TABLE IF NOT EXISTS settings(page_id TEXT PRIMARY KEY,welcome_enabled BOOLEAN NOT NULL DEFAULT TRUE,welcome_message TEXT NOT NULL DEFAULT 'Hello! Thanks for messaging us. How can we help you today?',default_enabled BOOLEAN NOT NULL DEFAULT TRUE,default_reply TEXT NOT NULL DEFAULT 'Thanks for your message. We will get back to you shortly.',comment_enabled BOOLEAN NOT NULL DEFAULT TRUE,comment_reply TEXT NOT NULL DEFAULT 'Thanks for your comment! We have sent you a private message.',updated_at TIMESTAMPTZ DEFAULT NOW())`);
@@ -154,7 +160,7 @@ app.post("/webhook",(req,res)=>{
  if(!safeEqual(sig,expected)){console.error("Webhook rejected: Meta signature does not match META_APP_SECRET.");return res.sendStatus(401);}
  let payload;try{payload=JSON.parse(req.rawBody.toString("utf8"));}catch{console.error("Webhook rejected: request body is not valid JSON.");return res.sendStatus(400);}
  const entries=payload.entry||[];
- console.log("Meta webhook signature accepted:",{object:payload.object||null,entries:entries.length,matchingPageEntries:entries.length,messagingEvents:entries.reduce((n,e)=>n+(Array.isArray(e.messaging)?e.messaging.length:0),0),changes:entries.flatMap(e=>(Array.isArray(e.changes)?e.changes:[]).map(c=>({field:c.field||null,item:c.value?.item||null,verb:c.value?.verb||null,hasCommentId:!!(c.value?.comment_id||c.value?.id)}))),connectedPageCount:entries.length});
+ console.log("Meta webhook signature accepted:",{object:payload.object||null,entries:entries.length,matchingPageEntries:entries.length,messagingEvents:entries.reduce((n,e)=>n+(Array.isArray(e.messaging)?e.messaging.length:0),0),changes:entries.flatMap(e=>(Array.isArray(e.changes)?e.changes:[]).map(c=>({field:c.field||null,item:c.value?.item||null,verb:c.value?.verb||null,hasCommentId:!!(c.value?.comment_id||c.value?.id)}))),webhookEntryCount:entries.length});
  res.sendStatus(200);processPayload(payload).catch(e=>console.error("Webhook handler failed:",e.message));
 });
 app.get("/health",asyncRoute(async(req,res)=>res.json({status:"ok",app:"IchaBot",adminConfigured:!!ADMIN_PASSWORD,pageConfigured:(await getPages()).length>0,webhookConfigured:!!(APP_SECRET&&VERIFY_TOKEN)})));
