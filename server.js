@@ -25,6 +25,8 @@ const pageReady=()=>Boolean(PAGE_ID&&PAGE_ACCESS_TOKEN),facebookLoginReady=()=>B
 async function graphPost(endpoint,data){const r=await axios.post(GRAPH_BASE+"/"+endpoint,data,{params:{access_token:PAGE_ACCESS_TOKEN},timeout:20000});return r.data;}
 async function initDatabase(){
  await pool.query(`CREATE TABLE IF NOT EXISTS settings(page_id TEXT PRIMARY KEY,welcome_enabled BOOLEAN NOT NULL DEFAULT TRUE,welcome_message TEXT NOT NULL DEFAULT 'Hello! Thanks for messaging us. How can we help you today?',default_enabled BOOLEAN NOT NULL DEFAULT TRUE,default_reply TEXT NOT NULL DEFAULT 'Thanks for your message. We will get back to you shortly.',comment_enabled BOOLEAN NOT NULL DEFAULT TRUE,comment_reply TEXT NOT NULL DEFAULT 'Thanks for your comment! We have sent you a private message.',updated_at TIMESTAMPTZ DEFAULT NOW())`);
+ await pool.query(`CREATE TABLE IF NOT EXISTS saved_messages(id BIGSERIAL PRIMARY KEY,page_id TEXT NOT NULL,title TEXT NOT NULL,message TEXT NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW())`);
+ await pool.query(`CREATE INDEX IF NOT EXISTS saved_messages_page_idx ON saved_messages(page_id,updated_at DESC)`);
  await pool.query(`CREATE TABLE IF NOT EXISTS contacts(page_id TEXT NOT NULL,psid TEXT NOT NULL,last_interaction TIMESTAMPTZ DEFAULT NOW(),first_message BOOLEAN NOT NULL DEFAULT TRUE,welcome_claimed_at TIMESTAMPTZ,created_at TIMESTAMPTZ DEFAULT NOW(),PRIMARY KEY(page_id,psid))`);
  await pool.query(`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS first_message BOOLEAN NOT NULL DEFAULT TRUE`);
  await pool.query(`ALTER TABLE contacts ADD COLUMN IF NOT EXISTS welcome_claimed_at TIMESTAMPTZ`);
@@ -134,6 +136,25 @@ app.get("/api/audience",requireAdmin,asyncRoute(async(req,res)=>{
  if(!PAGE_ID)return res.status(503).json({error:"PAGE_ID is missing in Render."});
  const r=await pool.query(`SELECT COUNT(*)::int AS total,COUNT(*) FILTER (WHERE last_interaction>NOW()-INTERVAL '24 hours')::int AS eligible FROM contacts WHERE page_id=$1`,[PAGE_ID]);
  res.json({total:Number(r.rows[0].total||0),eligible:Number(r.rows[0].eligible||0),windowHours:24});
+}));
+app.get("/api/saved-messages",requireAdmin,asyncRoute(async(req,res)=>{
+ if(!PAGE_ID)return res.status(503).json({error:"PAGE_ID is missing in Render."});
+ const r=await pool.query(`SELECT id,title,message,created_at,updated_at FROM saved_messages WHERE page_id=$1 ORDER BY updated_at DESC,id DESC`,[PAGE_ID]);res.json(r.rows);
+}));
+app.post("/api/saved-messages",requireAdmin,asyncRoute(async(req,res)=>{
+ if(!PAGE_ID)return res.status(503).json({error:"PAGE_ID is missing in Render."});
+ const title=String(req.body.title||"").trim(),message=String(req.body.message||"").trim(),id=Number(req.body.id||0);
+ if(!title)return res.status(400).json({error:"Enter a name for this saved message."});
+ if(title.length>80)return res.status(400).json({error:"Message name must be 80 characters or less."});
+ if(!message)return res.status(400).json({error:"Write a message before saving."});
+ if(message.length>2000)return res.status(400).json({error:"Message must be 2,000 characters or less."});
+ if(id>0){const r=await pool.query(`UPDATE saved_messages SET title=$1,message=$2,updated_at=NOW() WHERE id=$3 AND page_id=$4 RETURNING id,title,message,created_at,updated_at`,[title,message,id,PAGE_ID]);if(!r.rowCount)return res.status(404).json({error:"Saved message was not found."});return res.json({success:true,message:"Saved message updated.",savedMessage:r.rows[0]});}
+ const r=await pool.query(`INSERT INTO saved_messages(page_id,title,message) VALUES($1,$2,$3) RETURNING id,title,message,created_at,updated_at`,[PAGE_ID,title,message]);res.status(201).json({success:true,message:"Saved message created.",savedMessage:r.rows[0]});
+}));
+app.delete("/api/saved-messages/:id",requireAdmin,asyncRoute(async(req,res)=>{
+ if(!PAGE_ID)return res.status(503).json({error:"PAGE_ID is missing in Render."});
+ const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:"Invalid saved message ID."});
+ const r=await pool.query(`DELETE FROM saved_messages WHERE id=$1 AND page_id=$2 RETURNING id`,[id,PAGE_ID]);if(!r.rowCount)return res.status(404).json({error:"Saved message was not found."});res.json({success:true});
 }));
 app.get("/api/settings",requireAdmin,asyncRoute(async(req,res)=>{if(!PAGE_ID)return res.status(503).json({error:"PAGE_ID is missing in Render."});res.json(await getSettings());}));
 app.post("/api/settings",requireAdmin,asyncRoute(async(req,res)=>{
