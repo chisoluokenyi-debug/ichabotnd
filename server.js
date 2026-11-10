@@ -136,7 +136,7 @@ app.post("/webhook",(req,res)=>{
  if(!safeEqual(sig,expected)){console.error("Webhook rejected: Meta signature does not match META_APP_SECRET.");return res.sendStatus(401);}
  let payload;try{payload=JSON.parse(req.rawBody.toString("utf8"));}catch{console.error("Webhook rejected: request body is not valid JSON.");return res.sendStatus(400);}
  const entries=payload.entry||[];
- console.log("Meta webhook signature accepted:",{object:payload.object||null,entries:entries.length,matchingPageEntries:entries.length,messagingEvents:entries.reduce((n,e)=>n+(Array.isArray(e.messaging)?e.messaging.length:0),0),changes:entries.flatMap(e=>(Array.isArray(e.changes)?e.changes:[]).map(c=>({field:c.field||null,item:c.value?.item||null,verb:c.value?.verb||null,hasCommentId:!!(c.value?.comment_id||c.value?.id)}))),connectedPageCount:(await getPages()).length});
+ console.log("Meta webhook signature accepted:",{object:payload.object||null,entries:entries.length,matchingPageEntries:entries.length,messagingEvents:entries.reduce((n,e)=>n+(Array.isArray(e.messaging)?e.messaging.length:0),0),changes:entries.flatMap(e=>(Array.isArray(e.changes)?e.changes:[]).map(c=>({field:c.field||null,item:c.value?.item||null,verb:c.value?.verb||null,hasCommentId:!!(c.value?.comment_id||c.value?.id)}))),connectedPageCount:entries.length});
  res.sendStatus(200);processPayload(payload).catch(e=>console.error("Webhook handler failed:",e.message));
 });
 app.get("/health",asyncRoute(async(req,res)=>res.json({status:"ok",app:"IchaBot",adminConfigured:!!ADMIN_PASSWORD,pageConfigured:(await getPages()).length>0,webhookConfigured:!!(APP_SECRET&&VERIFY_TOKEN)})));
