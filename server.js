@@ -85,9 +85,16 @@ async function processMessage(event,page){
  try{const settings=await getSettings(pageId);
   await pool.query(`INSERT INTO contacts(page_id,psid,last_interaction,first_message) VALUES($1,$2,NOW(),TRUE) ON CONFLICT(page_id,psid) DO UPDATE SET last_interaction=NOW()`,[pageId,psid]);
   try{const profile=await axios.get(GRAPH_BASE+"/"+psid,{params:{fields:"first_name,last_name",access_token:page.accessToken},timeout:12000});await pool.query("UPDATE contacts SET first_name=COALESCE(NULLIF($1,''),first_name),last_name=COALESCE(NULLIF($2,''),last_name) WHERE page_id=$3 AND psid=$4",[String(profile.data.first_name||""),String(profile.data.last_name||""),pageId,psid]);}catch(e){const x=e.response?.data?.error||{};console.warn("Messenger profile lookup failed:",{status:e.response?.status||null,code:x.code||null,message:x.message||e.message});}
-  const c=await pool.query(`UPDATE contacts SET welcome_claimed_at=NOW() WHERE page_id=$1 AND psid=$2 AND first_message=TRUE AND (welcome_claimed_at IS NULL OR welcome_claimed_at<NOW()-INTERVAL '5 minutes') RETURNING psid`,[pageId,psid]),first=c.rowCount>0,reply=first&&settings.welcome_enabled?settings.welcome_message:(settings.default_enabled?settings.default_reply:"");
-  if(reply){try{await sendMessage(page,psid,reply);if(first)await pool.query(`UPDATE contacts SET first_message=FALSE,welcome_claimed_at=NULL WHERE page_id=$1 AND psid=$2`,[pageId,psid]);}catch(e){if(first)await pool.query(`UPDATE contacts SET welcome_claimed_at=NULL WHERE page_id=$1 AND psid=$2`,[pageId,psid]);throw e;}}
-  else if(first)await pool.query(`UPDATE contacts SET first_message=FALSE,welcome_claimed_at=NULL WHERE page_id=$1 AND psid=$2`,[pageId,psid]);
+  const claim=await pool.query(`UPDATE contacts SET welcome_claimed_at=NOW() WHERE page_id=$1 AND psid=$2 AND first_message=TRUE AND (welcome_claimed_at IS NULL OR welcome_claimed_at<NOW()-INTERVAL '5 minutes') RETURNING psid`,[pageId,psid]);
+  const first=claim.rowCount>0;
+  if(!first){
+   const state=await pool.query(`SELECT first_message,welcome_claimed_at FROM contacts WHERE page_id=$1 AND psid=$2`,[pageId,psid]);
+   // A concurrent first-message webhook must not trigger the default reply.
+   if(state.rows[0]?.first_message===true&&state.rows[0]?.welcome_claimed_at)return;
+  }
+  const reply=first?(settings.welcome_enabled?settings.welcome_message:""):(settings.default_enabled?settings.default_reply:"");
+  if(reply){try{await sendMessage(page,psid,reply);}catch(e){if(first)await pool.query(`UPDATE contacts SET welcome_claimed_at=NULL WHERE page_id=$1 AND psid=$2`,[pageId,psid]);throw e;}}
+  if(first)await pool.query(`UPDATE contacts SET first_message=FALSE,welcome_claimed_at=NULL WHERE page_id=$1 AND psid=$2`,[pageId,psid]);
   if(eventId)await finishEvent(eventId,true);
  }catch(e){if(eventId)await finishEvent(eventId,false);throw e;}
 }
