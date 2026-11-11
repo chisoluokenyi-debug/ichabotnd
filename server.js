@@ -4,15 +4,8 @@ const app=express(),PORT=process.env.PORT||3000;
 const GRAPH_VERSION=(process.env.META_GRAPH_VERSION||"v25.0").replace(/^\/?/,"v").replace(/^vv/,"v"),GRAPH_BASE="https://graph.facebook.com/"+GRAPH_VERSION;
 const LEGACY_PAGE_ID=String(process.env.PAGE_ID||"").trim(),LEGACY_PAGE_TOKEN=String(process.env.PAGE_ACCESS_TOKEN||"").trim(),LEGACY_PAGE_NAME=String(process.env.PAGE_NAME||"Connected Facebook Page").trim();
 function configuredPageCredentials(){
- const pages=[];
- if(LEGACY_PAGE_ID&&LEGACY_PAGE_TOKEN)pages.push({id:LEGACY_PAGE_ID,token:LEGACY_PAGE_TOKEN,name:LEGACY_PAGE_NAME});
- for(const key of Object.keys(process.env)){
-  const m=key.match(/^PAGE_(\d+)_ID$/);
-  if(!m)continue;
-  const n=m[1],id=String(process.env[key]||"").trim(),token=String(process.env["PAGE_"+n+"_ACCESS_TOKEN"]||"").trim(),name=String(process.env["PAGE_"+n+"_NAME"]||("Facebook Page "+n)).trim();
-  if(id&&token&&!pages.some(p=>p.id===id))pages.push({id,token,name});
- }
- return pages;
+ if(!LEGACY_PAGE_ID||!LEGACY_PAGE_TOKEN)return [];
+ return [{id:LEGACY_PAGE_ID,token:LEGACY_PAGE_TOKEN,name:LEGACY_PAGE_NAME}];
 }
 const APP_SECRET=process.env.META_APP_SECRET||"",VERIFY_TOKEN=process.env.META_WEBHOOK_VERIFY_TOKEN||"",ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||"",SESSION_SECRET=process.env.SESSION_SECRET||"",META_APP_ID=String(process.env.META_APP_ID||"").trim(),FACEBOOK_ADMIN_ID=String(process.env.FACEBOOK_ADMIN_ID||"").trim();
 const APP_BASE_URL=(process.env.APP_BASE_URL||process.env.RENDER_EXTERNAL_URL||"https://ichabotnd.onrender.com").replace(/\/+$/,"");
@@ -21,7 +14,7 @@ if(SESSION_SECRET.length<32)throw new Error("SESSION_SECRET must be at least 32 
 if(!APP_SECRET)console.warn("META_APP_SECRET is not configured.");
 if(!VERIFY_TOKEN)console.warn("META_WEBHOOK_VERIFY_TOKEN is not configured.");
 if(!ADMIN_PASSWORD)console.warn("ADMIN_PASSWORD is not configured; dashboard login will remain locked.");
-if(!configuredPageCredentials().length)console.warn("No Page credentials found in Render Environment; add PAGE_1_ID and PAGE_1_ACCESS_TOKEN or connect a Page in the dashboard.");
+if(!configuredPageCredentials().length)console.warn("No Page credentials found in Render Environment; add PAGE_ID and PAGE_ACCESS_TOKEN in Render Environment.");
 const pool=new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="true"?{rejectUnauthorized:false}:undefined});
 function personalizeMessage(message,names={}){const first=String(names.first_name||"").trim(),middle=String(names.middle_name||"").trim(),last=String(names.last_name||"").trim(),full=String(names.full_name||[first,middle,last].filter(Boolean).join(" ")).trim();return String(message||"").replace(/\{\s*(first_name|middle_name|last_name|full_name)\s*\}/gi,(_,key)=>({first_name:first,middle_name:middle,last_name:last,full_name:full}[key.toLowerCase()]||""));}
 pool.on("error",e=>console.error("Database error:",e.message));
@@ -38,7 +31,7 @@ const tokenKey=()=>crypto.createHash("sha256").update("ichabot-facebook-pages:"+
 function encryptToken(token){const iv=crypto.randomBytes(12),c=crypto.createCipheriv("aes-256-gcm",tokenKey(),iv),data=Buffer.concat([c.update(String(token),"utf8"),c.final()]);return [iv.toString("base64"),c.getAuthTag().toString("base64"),data.toString("base64")].join(".");}
 function decryptToken(value){const [iv,tag,data]=String(value||"").split(".");if(!iv||!tag||!data)throw new Error("Stored Page token is invalid.");const d=crypto.createDecipheriv("aes-256-gcm",tokenKey(),Buffer.from(iv,"base64"));d.setAuthTag(Buffer.from(tag,"base64"));return Buffer.concat([d.update(Buffer.from(data,"base64")),d.final()]).toString("utf8");}
 async function getPage(id){if(!id)return null;const r=await pool.query("SELECT page_id,page_name,access_token_encrypted FROM facebook_pages WHERE page_id=$1 AND active=TRUE",[String(id)]);if(!r.rowCount)return null;return{page_id:r.rows[0].page_id,page_name:r.rows[0].page_name,accessToken:decryptToken(r.rows[0].access_token_encrypted)};}
-async function getPages(){return(await pool.query("SELECT page_id,page_name,created_at FROM facebook_pages WHERE active=TRUE ORDER BY created_at")).rows;}
+async function getPages(){return(await pool.query("SELECT page_id,page_name,created_at FROM facebook_pages WHERE active=TRUE ORDER BY created_at LIMIT 1")).rows;}
 async function pageFor(req){const id=String(req.query.pageId||req.body?.pageId||"").trim();if(id){const p=await getPage(id);if(!p)throw Object.assign(new Error("Selected Facebook Page is not connected."),{status:404});return p;}const pages=await getPages();return pages.length?getPage(pages[0].page_id):null;}
 const pageReady=p=>Boolean(p&&p.page_id&&p.accessToken);
 async function graphPost(page,endpoint,data){const r=await axios.post(GRAPH_BASE+"/"+endpoint,data,{params:{access_token:page.accessToken},timeout:20000});return r.data;}
@@ -77,7 +70,7 @@ async function initDatabase(){
  await pool.query(`CREATE TABLE IF NOT EXISTS processed_events(event_id TEXT PRIMARY KEY,status TEXT NOT NULL DEFAULT 'processing',created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW())`);
  await pool.query(`CREATE INDEX IF NOT EXISTS contacts_activity_idx ON contacts(page_id,last_interaction)`);
  await pool.query(`CREATE INDEX IF NOT EXISTS broadcasts_due_idx ON broadcasts(status,scheduled_at)`);
- console.log("Multi-Page database is ready.");
+ console.log("Single-Page database is ready.");
  console.log("IchaBot database is ready.");
 }
 async function getSettings(pageId){if(!pageId)return null;await pool.query(`INSERT INTO settings(page_id) VALUES($1) ON CONFLICT(page_id) DO NOTHING`,[pageId]);return(await pool.query(`SELECT * FROM settings WHERE page_id=$1`,[pageId])).rows[0];}
@@ -138,8 +131,8 @@ app.post("/api/login",(req,res)=>{
 app.post("/api/logout",(req,res)=>req.session.destroy(()=>res.json({success:true})));
 app.get("/api/me",asyncRoute(async(req,res)=>{const pages=await getPages();res.json({authenticated:!!req.session.adminAuthenticated,pageConnected:pages.length>0,pages:pages.map(p=>({pageId:p.page_id,pageName:p.page_name})),pageName:pages[0]?.page_name||null,pageId:pages[0]?.page_id||null,facebookLoginEnabled:facebookLoginReady(),needsSetup:!ADMIN_PASSWORD||!APP_SECRET||!VERIFY_TOKEN});}));
 app.get("/api/pages",requireAdmin,asyncRoute(async(req,res)=>res.json(await getPages())));
-app.post("/api/pages",requireAdmin,asyncRoute(async(req,res)=>{const pageId=String(req.body.pageId||"").trim(),accessToken=String(req.body.accessToken||"").trim();if(!pageId||!accessToken)return res.status(400).json({error:"Enter the Page ID and Page access token."});if(pageId.length>100||accessToken.length>10000)return res.status(400).json({error:"Invalid Page details."});const p=await axios.get(GRAPH_BASE+"/me",{params:{fields:"id,name",access_token:accessToken},timeout:20000});if(String(p.data.id)!==pageId)return res.status(400).json({error:"This token belongs to a different Page ID."});await axios.post(GRAPH_BASE+"/"+pageId+"/subscribed_apps",{}, {params:{subscribed_fields:"messages,messaging_postbacks,feed",access_token},timeout:20000});const name=String(p.data.name||"Facebook Page");await pool.query(`INSERT INTO facebook_pages(page_id,page_name,access_token_encrypted) VALUES($1,$2,$3) ON CONFLICT(page_id) DO UPDATE SET page_name=EXCLUDED.page_name,access_token_encrypted=EXCLUDED.access_token_encrypted,active=TRUE,updated_at=NOW()`,[pageId,name,encryptToken(accessToken)]);await pool.query("INSERT INTO settings(page_id) VALUES($1) ON CONFLICT(page_id) DO NOTHING",[pageId]);res.status(201).json({success:true,message:"Facebook Page connected.",page:{pageId,pageName:name}});}));
-app.delete("/api/pages/:id",requireAdmin,asyncRoute(async(req,res)=>{const id=String(req.params.id||""),count=await pool.query("SELECT COUNT(*)::int AS n FROM facebook_pages WHERE active=TRUE");if(count.rows[0].n<=1)return res.status(400).json({error:"Keep at least one Page connected."});const r=await pool.query("UPDATE facebook_pages SET active=FALSE,updated_at=NOW() WHERE page_id=$1 RETURNING page_id",[id]);if(!r.rowCount)return res.status(404).json({error:"Page not found."});res.json({success:true});}));
+app.post("/api/pages",requireAdmin,(req,res)=>res.status(403).json({error:"Page connection is managed only in Render Environment. Set PAGE_ID and PAGE_ACCESS_TOKEN."}));
+app.delete("/api/pages/:id",requireAdmin,(req,res)=>res.status(403).json({error:"The Render-connected Page cannot be disconnected from the dashboard."}));
 app.get("/api/audience",requireAdmin,asyncRoute(async(req,res)=>{const p=await pageFor(req);if(!p)return res.status(503).json({error:"Connect a Page first."});const r=await pool.query(`SELECT COUNT(*)::int AS total,COUNT(*) FILTER (WHERE last_interaction>NOW()-INTERVAL '24 hours')::int AS eligible FROM contacts WHERE page_id=$1`,[p.page_id]);res.json({total:Number(r.rows[0].total||0),eligible:Number(r.rows[0].eligible||0),windowHours:24});}));
 app.get("/api/saved-messages",requireAdmin,asyncRoute(async(req,res)=>{const p=await pageFor(req);if(!p)return res.status(503).json({error:"Connect a Page first."});const r=await pool.query(`SELECT id,title,message,created_at,updated_at FROM saved_messages WHERE page_id=$1 ORDER BY updated_at DESC,id DESC`,[p.page_id]);res.json(r.rows);}));
 app.post("/api/saved-messages",requireAdmin,asyncRoute(async(req,res)=>{const p=await pageFor(req);if(!p)return res.status(503).json({error:"Connect a Page first."});const title=String(req.body.title||"").trim(),message=String(req.body.message||"").trim(),id=Number(req.body.id||0);if(!title||!message)return res.status(400).json({error:"Enter a title and message."});if(title.length>80||message.length>2000)return res.status(400).json({error:"Title or message is too long."});if(id>0){const r=await pool.query(`UPDATE saved_messages SET title=$1,message=$2,updated_at=NOW() WHERE id=$3 AND page_id=$4 RETURNING id,title,message,created_at,updated_at`,[title,message,id,p.page_id]);if(!r.rowCount)return res.status(404).json({error:"Saved message not found."});return res.json({success:true,message:"Saved message updated.",savedMessage:r.rows[0]});}const r=await pool.query(`INSERT INTO saved_messages(page_id,title,message) VALUES($1,$2,$3) RETURNING id,title,message,created_at,updated_at`,[p.page_id,title,message]);res.status(201).json({success:true,message:"Saved message created.",savedMessage:r.rows[0]});}));
