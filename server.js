@@ -126,7 +126,8 @@ app.get("/auth/facebook/callback",asyncRoute(async(req,res)=>{
 }));
 app.post("/api/login",(req,res)=>{
  if(!ADMIN_PASSWORD)return res.status(503).json({error:"ADMIN_PASSWORD must be added to Render Environment before sign-in."});
- if(!safeEqual(req.body.password,ADMIN_PASSWORD))return res.status(401).json({error:"Incorrect dashboard password."});
+ const submittedPassword=String(req.body?.password??"");
+ if(!safeEqual(submittedPassword,ADMIN_PASSWORD))return res.status(401).json({error:"Incorrect dashboard password."});
  req.session.regenerate(err=>{if(err)return res.status(500).json({error:"Could not start secure session."});req.session.adminAuthenticated=true;req.session.save(e=>e?res.status(500).json({error:"Could not save session."}):res.json({success:true}));});
 });
 app.post("/api/logout",(req,res)=>req.session.destroy(()=>res.json({success:true})));
