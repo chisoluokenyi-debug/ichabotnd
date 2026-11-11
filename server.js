@@ -133,8 +133,10 @@ app.get("/auth/facebook/callback",asyncRoute(async(req,res)=>{
  if(!code)return res.status(400).send("Facebook did not return a login code.");
  const redirectUri=APP_BASE_URL+"/auth/facebook/callback";
  const token=await axios.get("https://graph.facebook.com/"+GRAPH_VERSION+"/oauth/access_token",{params:{client_id:META_APP_ID,client_secret:APP_SECRET,redirect_uri:redirectUri,code},timeout:20000});
- const extended=await axios.get("https://graph.facebook.com/"+GRAPH_VERSION+"/oauth/access_token",{params:{grant_type:"fb_exchange_token",client_id:META_APP_ID,client_secret:APP_SECRET,fb_exchange_token:token.data.access_token},timeout:20000}).catch(()=>({data:{access_token:token.data.access_token}}));
- const userToken=extended.data.access_token||token.data.access_token;
+ // Never fall back to the short-lived login token: its Page token may expire quickly.
+ const extended=await axios.get("https://graph.facebook.com/"+GRAPH_VERSION+"/oauth/access_token",{params:{grant_type:"fb_exchange_token",client_id:META_APP_ID,client_secret:APP_SECRET,fb_exchange_token:token.data.access_token},timeout:20000});
+ const userToken=String(extended.data.access_token||"");
+ if(!userToken)throw new Error("Meta did not return a long-lived user access token. Please try Facebook Login again.");
  const profile=await axios.get("https://graph.facebook.com/"+GRAPH_VERSION+"/me",{params:{fields:"id,name",access_token:userToken},timeout:20000});
  const facebookId=String(profile.data.id||"");if(!facebookId)return res.status(400).send("Facebook did not return your account ID.");
  const user=await pool.query(`INSERT INTO ichabot_users(facebook_id,display_name,updated_at) VALUES($1,$2,NOW()) ON CONFLICT(facebook_id) DO UPDATE SET display_name=EXCLUDED.display_name,updated_at=NOW() RETURNING id`,[facebookId,String(profile.data.name||"Facebook user")]);
