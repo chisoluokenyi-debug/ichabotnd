@@ -4,8 +4,13 @@ const app=express(),PORT=process.env.PORT||3000;
 const GRAPH_VERSION=(process.env.META_GRAPH_VERSION||"v25.0").replace(/^\/?/,"v").replace(/^vv/,"v"),GRAPH_BASE="https://graph.facebook.com/"+GRAPH_VERSION;
 const LEGACY_PAGE_ID=String(process.env.PAGE_ID||"").trim(),LEGACY_PAGE_TOKEN=String(process.env.PAGE_ACCESS_TOKEN||"").trim(),LEGACY_PAGE_NAME=String(process.env.PAGE_NAME||"Connected Facebook Page").trim();
 function configuredPageCredentials(){
- if(!LEGACY_PAGE_ID||!LEGACY_PAGE_TOKEN)return [];
- return [{id:LEGACY_PAGE_ID,token:LEGACY_PAGE_TOKEN,name:LEGACY_PAGE_NAME}];
+ if(LEGACY_PAGE_ID&&LEGACY_PAGE_TOKEN)return [{id:LEGACY_PAGE_ID,token:LEGACY_PAGE_TOKEN,name:LEGACY_PAGE_NAME}];
+ const keys=Object.keys(process.env).filter(k=>/^PAGE_\d+_ID$/.test(k)).sort((a,b)=>Number(a.match(/^PAGE_(\d+)_ID$/)[1])-Number(b.match(/^PAGE_(\d+)_ID$/)[1]));
+ for(const key of keys){
+  const n=key.match(/^PAGE_(\d+)_ID$/)[1],id=String(process.env[key]||'').trim(),token=String(process.env['PAGE_'+n+'_ACCESS_TOKEN']||'').trim(),name=String(process.env['PAGE_'+n+'_NAME']||'Connected Facebook Page').trim();
+  if(id&&token)return [{id,token,name}];
+ }
+ return [];
 }
 const APP_SECRET=process.env.META_APP_SECRET||"",VERIFY_TOKEN=process.env.META_WEBHOOK_VERIFY_TOKEN||"",ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||"",SESSION_SECRET=process.env.SESSION_SECRET||"",META_APP_ID=String(process.env.META_APP_ID||"").trim(),FACEBOOK_ADMIN_ID=String(process.env.FACEBOOK_ADMIN_ID||"").trim();
 const APP_BASE_URL=(process.env.APP_BASE_URL||process.env.RENDER_EXTERNAL_URL||"https://ichabotnd.onrender.com").replace(/\/+$/,"");
