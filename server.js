@@ -44,17 +44,13 @@ async function initDatabase(){
  await pool.query(`CREATE TABLE IF NOT EXISTS facebook_pages(page_id TEXT PRIMARY KEY,page_name TEXT NOT NULL,access_token_encrypted TEXT NOT NULL,active BOOLEAN NOT NULL DEFAULT TRUE,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW())`);
  for(const configured of configuredPageCredentials()){
   try{
-   const p=await axios.get(GRAPH_BASE+"/me",{params:{fields:"id,name",access_token:configured.token},timeout:15000});
-   if(String(p.data.id)!==configured.id)throw new Error("The configured Page ID does not match this Page access token (token resolves to "+String(p.data.id||"unknown") + ").");
-   await pool.query(`INSERT INTO facebook_pages(page_id,page_name,access_token_encrypted) VALUES($1,$2,$3) ON CONFLICT(page_id) DO UPDATE SET page_name=EXCLUDED.page_name,access_token_encrypted=EXCLUDED.access_token_encrypted,active=TRUE,updated_at=NOW()`,[configured.id,String(p.data.name||configured.name),encryptToken(configured.token)]);
-   console.log("Imported Render Page credentials:",configured.id);
-   try{
-    await axios.post(GRAPH_BASE+"/"+configured.id+"/subscribed_apps",{}, {params:{subscribed_fields:"messages,messaging_postbacks,feed",access_token:configured.token},timeout:15000});
-    console.log("Subscribed IchaBot to Page webhooks:",configured.id);
-   }catch(subscriptionError){
-    console.error("Page imported but webhook subscription failed for "+configured.id+":",subscriptionError.response?.data?.error?.message||subscriptionError.message);
-   }
-  }catch(e){console.error("Could not import Render Page credentials for "+configured.id+":",e.response?.data?.error?.message||e.message);}
+   // Subscribe first. Reading /me fields requires pages_read_engagement and should not block a valid Page token from connecting.
+   await axios.post(GRAPH_BASE+"/"+configured.id+"/subscribed_apps",{}, {params:{subscribed_fields:"messages,messaging_postbacks,feed",access_token:configured.token},timeout:15000});
+   await pool.query(`INSERT INTO facebook_pages(page_id,page_name,access_token_encrypted) VALUES($1,$2,$3) ON CONFLICT(page_id) DO UPDATE SET page_name=EXCLUDED.page_name,access_token_encrypted=EXCLUDED.access_token_encrypted,active=TRUE,updated_at=NOW()`,[configured.id,configured.name,encryptToken(configured.token)]);
+   await pool.query("INSERT INTO settings(page_id) VALUES($1) ON CONFLICT(page_id) DO NOTHING",[configured.id]);
+   console.log("Connected Render-configured Facebook Page:",configured.id);
+   console.log("Subscribed IchaBot to Page webhooks:",configured.id);
+  }catch(e){console.error("Could not connect Render Page credentials for "+configured.id+":",e.response?.data?.error?.message||e.message);}
  }
  await pool.query(`CREATE TABLE IF NOT EXISTS settings(page_id TEXT PRIMARY KEY,welcome_enabled BOOLEAN NOT NULL DEFAULT TRUE,welcome_message TEXT NOT NULL DEFAULT 'Hello! Thanks for messaging us. How can we help you today?',default_enabled BOOLEAN NOT NULL DEFAULT TRUE,default_reply TEXT NOT NULL DEFAULT 'Thanks for your message. We will get back to you shortly.',comment_enabled BOOLEAN NOT NULL DEFAULT TRUE,comment_reply TEXT NOT NULL DEFAULT 'Thanks for your comment! We have sent you a private message.',updated_at TIMESTAMPTZ DEFAULT NOW())`);
  await pool.query(`CREATE TABLE IF NOT EXISTS saved_messages(id BIGSERIAL PRIMARY KEY,page_id TEXT NOT NULL,title TEXT NOT NULL,message TEXT NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW())`);
