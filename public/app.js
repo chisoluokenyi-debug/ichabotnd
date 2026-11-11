@@ -10,7 +10,7 @@ async function addPage(){const b=$("addPageButton"),pageId=$("newPageId").value.
 async function disconnectPage(id,name){if(!window.confirm("Disconnect "+name+" from IchaBot?"))return;try{await api("/api/pages/"+encodeURIComponent(id),{method:"DELETE"});await loadPages(await api("/api/pages"));await refreshPageData();notice("Page disconnected.");}catch(e){notice(e.message,true);}}
 
 async function login(ev){ev.preventDefault();const b=$("loginForm").querySelector("button");busy(b,true,"Signing in…");try{await api("/api/login",{method:"POST",body:JSON.stringify({password:$("adminPassword").value})});$("adminPassword").value="";await loadMe();}catch(e){notice(e.message,true,"loginNotice");}finally{busy(b,false);}}
-async function loadSettings(){const s=await api("/api/settings");$("welcomeEnabled").checked=!!s.welcome_enabled;$("welcomeMessage").value=s.welcome_message||"";$("defaultEnabled").checked=!!s.default_enabled;$("defaultReply").value=s.default_reply||"";$("commentEnabled").checked=!!s.comment_enabled;$("commentReply").value=s.comment_reply||"";}
+async function loadSettings(){const s=await api("/api/settings");$("welcomeEnabled").checked=!!s.welcome_enabled;$("welcomeMessage").value=s.welcome_message||"";$("defaultEnabled").checked=!!s.default_enabled;$("defaultReply").value=s.default_reply||"";$("defaultReplyMode").value=s.default_reply_mode||"always";$("commentEnabled").checked=!!s.comment_enabled;$("commentReply").value=s.comment_reply||"";}
 function messageWithButton(id){
  const target=$(id);if(!target)return "";
  let message=target.value;
@@ -24,7 +24,7 @@ function messageWithButton(id){
  }
  return message;
 }
-function payload(){return{welcome_enabled:$("welcomeEnabled").checked,welcome_message:messageWithButton("welcomeMessage"),default_enabled:$("defaultEnabled").checked,default_reply:messageWithButton("defaultReply"),comment_enabled:$("commentEnabled").checked,comment_reply:messageWithButton("commentReply")};}
+function payload(){return{welcome_enabled:$("welcomeEnabled").checked,welcome_message:messageWithButton("welcomeMessage"),default_enabled:$("defaultEnabled").checked,default_reply:messageWithButton("defaultReply"),default_reply_mode:$("defaultReplyMode").value,comment_enabled:$("commentEnabled").checked,comment_reply:messageWithButton("commentReply")};}
 async function save(b){busy(b,true,"Saving…");try{const r=await api("/api/settings",{method:"POST",body:JSON.stringify(payload())});notice(r.message||"Your message settings have been saved.");}catch(e){notice("Could not save: "+e.message,true);}finally{busy(b,false);}}
 function resetSavedEditor(){editingSavedId=null;$("savedMessageTitle").value="";$("savedMessageBody").value="";$("savedEditorHeading").textContent="Create a saved message";$("saveSavedMessage").innerHTML="Save message <span>✓</span>";$("cancelSavedEdit").hidden=true;}
 async function loadSavedMessages(){
