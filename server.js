@@ -119,7 +119,7 @@ app.get("/auth/facebook",(req,res)=>{
  req.session.save(err=>{
   if(err)return res.status(500).send("Could not start Facebook Login.");
   const redirectUri=APP_BASE_URL+"/auth/facebook/callback";
-  const params=new URLSearchParams({client_id:META_APP_ID,redirect_uri:redirectUri,state,response_type:"code",scope:"pages_show_list,pages_manage_metadata,pages_messaging"});
+  const params=new URLSearchParams({client_id:META_APP_ID,redirect_uri:redirectUri,state,response_type:"code",scope:"pages_show_list,pages_read_engagement,pages_manage_metadata,pages_messaging"});
   res.redirect("https://www.facebook.com/"+GRAPH_VERSION+"/dialog/oauth?"+params.toString());
  });
 });
