@@ -44,6 +44,7 @@ async function initDatabase(){
  await pool.query(`CREATE TABLE IF NOT EXISTS ichabot_users(id BIGSERIAL PRIMARY KEY,facebook_id TEXT UNIQUE NOT NULL,display_name TEXT,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW())`);
  await pool.query(`CREATE TABLE IF NOT EXISTS facebook_pages(page_id TEXT PRIMARY KEY,page_name TEXT NOT NULL,access_token_encrypted TEXT NOT NULL,owner_user_id BIGINT REFERENCES ichabot_users(id) ON DELETE CASCADE,active BOOLEAN NOT NULL DEFAULT TRUE,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW())`);
  await pool.query(`ALTER TABLE facebook_pages ADD COLUMN IF NOT EXISTS owner_user_id BIGINT REFERENCES ichabot_users(id) ON DELETE CASCADE`);
+ await pool.query(`CREATE TABLE IF NOT EXISTS settings(page_id TEXT PRIMARY KEY,welcome_enabled BOOLEAN NOT NULL DEFAULT TRUE,welcome_message TEXT NOT NULL DEFAULT 'Hello! Thanks for messaging us. How can we help you today?',default_enabled BOOLEAN NOT NULL DEFAULT TRUE,default_reply TEXT NOT NULL DEFAULT 'Thanks for your message. We will get back to you shortly.',default_reply_mode TEXT NOT NULL DEFAULT 'always',comment_enabled BOOLEAN NOT NULL DEFAULT TRUE,comment_reply TEXT NOT NULL DEFAULT 'Thanks for your comment! We have sent you a private message.',updated_at TIMESTAMPTZ DEFAULT NOW())`);
  for(const configured of configuredPageCredentials()){
   try{
    // Subscribe first. Reading /me fields requires pages_read_engagement and should not block a valid Page token from connecting.
@@ -54,7 +55,6 @@ async function initDatabase(){
    console.log("Subscribed IchaBot to Page webhooks:",configured.id);
   }catch(e){console.error("Could not connect Render Page credentials for "+configured.id+":",e.response?.data?.error?.message||e.message);}
  }
- await pool.query(`CREATE TABLE IF NOT EXISTS settings(page_id TEXT PRIMARY KEY,welcome_enabled BOOLEAN NOT NULL DEFAULT TRUE,welcome_message TEXT NOT NULL DEFAULT 'Hello! Thanks for messaging us. How can we help you today?',default_enabled BOOLEAN NOT NULL DEFAULT TRUE,default_reply TEXT NOT NULL DEFAULT 'Thanks for your message. We will get back to you shortly.',default_reply_mode TEXT NOT NULL DEFAULT 'always',comment_enabled BOOLEAN NOT NULL DEFAULT TRUE,comment_reply TEXT NOT NULL DEFAULT 'Thanks for your comment! We have sent you a private message.',updated_at TIMESTAMPTZ DEFAULT NOW())`);
  await pool.query(`CREATE TABLE IF NOT EXISTS saved_messages(id BIGSERIAL PRIMARY KEY,page_id TEXT NOT NULL,title TEXT NOT NULL,message TEXT NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW(),updated_at TIMESTAMPTZ DEFAULT NOW())`);
  await pool.query(`CREATE INDEX IF NOT EXISTS saved_messages_page_idx ON saved_messages(page_id,updated_at DESC)`);
  await pool.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_reply_mode TEXT NOT NULL DEFAULT 'always'`);
