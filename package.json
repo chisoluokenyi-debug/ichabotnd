@@ -17,5 +17,6 @@
     "express-session": "^1.18.1",
     "helmet": "^8.0.0",
     "pg": "^8.13.1"
-  }
+  },
+  "license": "UNLICENSED"
 }
