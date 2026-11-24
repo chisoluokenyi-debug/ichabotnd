@@ -155,6 +155,8 @@ app.post("/api/login",(req,res)=>{
 });
 app.post("/api/logout",(req,res)=>req.session.destroy(()=>res.json({success:true})));
 app.get("/api/me",asyncRoute(async(req,res)=>{const pages=await getPages(req.session.userId||null);res.json({authenticated:!!req.session.adminAuthenticated,pageConnected:pages.length>0,pages:pages.map(p=>({pageId:p.page_id,pageName:p.page_name})),pageName:pages[0]?.page_name||null,pageId:pages[0]?.page_id||null,facebookLoginEnabled:facebookLoginReady(),needsSetup:!ADMIN_PASSWORD||!APP_SECRET||!VERIFY_TOKEN});}));
+
+app.get("/api/admin/overview",requireAdmin,asyncRoute(async(req,res)=>{const [summary,users]=await Promise.all([pool.query(`SELECT (SELECT COUNT(*)::int FROM ichabot_users) AS total_users,(SELECT COUNT(*)::int FROM facebook_pages WHERE active=TRUE) AS connected_pages,(SELECT COUNT(DISTINCT psid)::int FROM contacts) AS messenger_contacts`),pool.query(`SELECT u.id,u.display_name,u.created_at,COUNT(DISTINCT p.page_id)::int AS connected_pages,COUNT(DISTINCT c.psid)::int AS messenger_contacts FROM ichabot_users u LEFT JOIN facebook_pages p ON p.owner_user_id=u.id AND p.active=TRUE LEFT JOIN contacts c ON c.page_id=p.page_id GROUP BY u.id ORDER BY u.created_at DESC LIMIT 100`)]);res.json({summary:summary.rows[0],users:users.rows});}));
 app.get("/api/pages",requireAdmin,asyncRoute(async(req,res)=>res.json(await getPages(req.session.userId||null))));
 app.post("/api/pages",requireAdmin,(req,res)=>res.status(403).json({error:"Page connection is managed only in Render Environment. Set PAGE_ID and PAGE_ACCESS_TOKEN."}));
 app.delete("/api/pages/:id",requireAdmin,(req,res)=>res.status(403).json({error:"The Render-connected Page cannot be disconnected from the dashboard."}));
