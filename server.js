@@ -12,6 +12,7 @@ function configuredPageCredentials(){
  }
  return [];
 }
+const PLATFORM_ADMIN_PASSWORD=process.env.PLATFORM_ADMIN_PASSWORD||"";
 const APP_SECRET=process.env.META_APP_SECRET||"",VERIFY_TOKEN=process.env.META_WEBHOOK_VERIFY_TOKEN||"",ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||"",SESSION_SECRET=process.env.SESSION_SECRET||"",META_APP_ID=String(process.env.META_APP_ID||"").trim();
 const APP_BASE_URL=(process.env.APP_BASE_URL||process.env.RENDER_EXTERNAL_URL||"https://ichabotnd.onrender.com").replace(/\/+$/,"");
 if(!process.env.DATABASE_URL)throw new Error("DATABASE_URL is missing.");
@@ -31,6 +32,7 @@ app.use(session({store:new PgSession({pool,tableName:"user_sessions",createTable
 app.use(express.static(path.join(__dirname,"public")));
 const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 const requireAdmin=(req,res,next)=>req.session.adminAuthenticated?next():res.status(401).json({error:"Please sign in to the IchaBot dashboard."});
+const requirePlatformAdmin=(req,res,next)=>req.session.platformAdminAuthenticated?next():res.status(401).json({error:"Platform administrator sign-in required."});
 const facebookLoginReady=()=>Boolean(META_APP_ID&&APP_SECRET);
 const tokenKey=()=>crypto.createHash("sha256").update("ichabot-facebook-pages:"+SESSION_SECRET).digest();
 function encryptToken(token){const iv=crypto.randomBytes(12),c=crypto.createCipheriv("aes-256-gcm",tokenKey(),iv),data=Buffer.concat([c.update(String(token),"utf8"),c.final()]);return [iv.toString("base64"),c.getAuthTag().toString("base64"),data.toString("base64")].join(".");}
@@ -156,7 +158,10 @@ app.post("/api/login",(req,res)=>{
 app.post("/api/logout",(req,res)=>req.session.destroy(()=>res.json({success:true})));
 app.get("/api/me",asyncRoute(async(req,res)=>{const pages=await getPages(req.session.userId||null);res.json({authenticated:!!req.session.adminAuthenticated,pageConnected:pages.length>0,pages:pages.map(p=>({pageId:p.page_id,pageName:p.page_name})),pageName:pages[0]?.page_name||null,pageId:pages[0]?.page_id||null,facebookLoginEnabled:facebookLoginReady(),needsSetup:!ADMIN_PASSWORD||!APP_SECRET||!VERIFY_TOKEN});}));
 
-app.get("/api/admin/overview",requireAdmin,asyncRoute(async(req,res)=>{const [summary,users]=await Promise.all([pool.query(`SELECT (SELECT COUNT(*)::int FROM ichabot_users) AS total_users,(SELECT COUNT(*)::int FROM facebook_pages WHERE active=TRUE) AS connected_pages,(SELECT COUNT(DISTINCT psid)::int FROM contacts) AS messenger_contacts`),pool.query(`SELECT u.id,u.display_name,u.created_at,COUNT(DISTINCT p.page_id)::int AS connected_pages,COUNT(DISTINCT c.psid)::int AS messenger_contacts FROM ichabot_users u LEFT JOIN facebook_pages p ON p.owner_user_id=u.id AND p.active=TRUE LEFT JOIN contacts c ON c.page_id=p.page_id GROUP BY u.id ORDER BY u.created_at DESC LIMIT 100`)]);res.json({summary:summary.rows[0],users:users.rows});}));
+app.post("/api/platform-admin/login",(req,res)=>{if(!PLATFORM_ADMIN_PASSWORD)return res.status(503).json({error:"Set PLATFORM_ADMIN_PASSWORD in Render Environment first."});if(!safeEqual(req.body?.password,PLATFORM_ADMIN_PASSWORD))return res.status(401).json({error:"Incorrect administrator password."});req.session.regenerate(err=>{if(err)return res.status(500).json({error:"Could not start secure session."});req.session.platformAdminAuthenticated=true;req.session.save(e=>e?res.status(500).json({error:"Could not save session."}):res.json({success:true}));});});
+app.get("/api/platform-admin/me",(req,res)=>res.json({authenticated:!!req.session.platformAdminAuthenticated,configured:!!PLATFORM_ADMIN_PASSWORD}));
+app.post("/api/platform-admin/logout",(req,res)=>{req.session.platformAdminAuthenticated=false;req.session.save(()=>res.json({success:true}));});
+app.get("/api/admin/overview",requirePlatformAdmin,asyncRoute(async(req,res)=>{const [summary,users]=await Promise.all([pool.query(`SELECT (SELECT COUNT(*)::int FROM ichabot_users) AS total_users,(SELECT COUNT(*)::int FROM facebook_pages WHERE active=TRUE) AS connected_pages,(SELECT COUNT(DISTINCT psid)::int FROM contacts) AS messenger_contacts`),pool.query(`SELECT u.id,u.display_name,u.created_at,COUNT(DISTINCT p.page_id)::int AS connected_pages,COUNT(DISTINCT c.psid)::int AS messenger_contacts FROM ichabot_users u LEFT JOIN facebook_pages p ON p.owner_user_id=u.id AND p.active=TRUE LEFT JOIN contacts c ON c.page_id=p.page_id GROUP BY u.id ORDER BY u.created_at DESC LIMIT 100`)]);res.json({summary:summary.rows[0],users:users.rows});}));
 app.get("/api/pages",requireAdmin,asyncRoute(async(req,res)=>res.json(await getPages(req.session.userId||null))));
 app.post("/api/pages",requireAdmin,(req,res)=>res.status(403).json({error:"Page connection is managed only in Render Environment. Set PAGE_ID and PAGE_ACCESS_TOKEN."}));
 app.delete("/api/pages/:id",requireAdmin,(req,res)=>res.status(403).json({error:"The Render-connected Page cannot be disconnected from the dashboard."}));
