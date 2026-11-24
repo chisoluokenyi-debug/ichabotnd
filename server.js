@@ -102,8 +102,7 @@ async function processMessage(event,page){
   await pool.query(`INSERT INTO contacts(page_id,psid,last_interaction,first_message) VALUES($1,$2,NOW(),TRUE) ON CONFLICT(page_id,psid) DO UPDATE SET last_interaction=NOW()`,[pageId,psid]);
   const subscription=await subscriptionForPage(pageId);
   if(subscription&&Number(subscription.subscribers)>=FREE_SUBSCRIBER_LIMIT&&!premiumActive(subscription)){
-   const marked=await pool.query(`UPDATE ichabot_users SET paywall_notified_at=NOW() WHERE id=$1 AND paywall_notified_at IS NULL RETURNING id`,[subscription.id]);
-   if(marked.rowCount){try{await sendMessage(page,psid,"You have reached IchaBot’s free limit of 2,000 subscribers. To continue using IchaBot, pay $30 USDT for 30 days and email your payment proof to info@tanphat.shop. The IchaBot owner will verify your payment and restore access.");}catch(e){await pool.query("UPDATE ichabot_users SET paywall_notified_at=NULL WHERE id=$1",[subscription.id]);throw e;}}
+   await pool.query(`UPDATE ichabot_users SET paywall_notified_at=COALESCE(paywall_notified_at,NOW()) WHERE id=$1`,[subscription.id]);
    if(eventId)await finishEvent(eventId,true);return;
   }
   try{const profile=await axios.get(GRAPH_BASE+"/"+psid,{params:{fields:"first_name,last_name",access_token:page.accessToken},timeout:12000});await pool.query("UPDATE contacts SET first_name=COALESCE(NULLIF($1,''),first_name),last_name=COALESCE(NULLIF($2,''),last_name) WHERE page_id=$3 AND psid=$4",[String(profile.data.first_name||""),String(profile.data.last_name||""),pageId,psid]);}catch(e){const x=e.response?.data?.error||{};console.warn("Messenger profile lookup failed:",{status:e.response?.status||null,code:x.code||null,message:x.message||e.message});}
