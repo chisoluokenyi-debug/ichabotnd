@@ -23,25 +23,42 @@ app.get("/api/status", (_req, res) => {
 });
 
 // Verify both credentials with non-billable account/profile requests.
-// Never return API keys or provider account identifiers to the browser.
+// Return only HTTP status and a safe error category; never return keys or provider response bodies.
 app.get("/api/provider-check", async (_req, res) => {
   const result = {
     replicate: { configured: Boolean(process.env.REPLICATE_API_TOKEN), connected: false },
     elevenlabs: { configured: Boolean(process.env.ELEVENLABS_API_KEY), connected: false }
   };
 
+  const check = async (provider, url, headers) => {
+    try {
+      const response = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(10000)
+      });
+      result[provider].connected = response.ok;
+      result[provider].httpStatus = response.status;
+      if (!response.ok) {
+        result[provider].error = response.status === 401 ? "unauthorized"
+          : response.status === 403 ? "forbidden_or_missing_permission"
+          : response.status === 429 ? "rate_limited"
+          : "provider_error";
+      }
+    } catch (error) {
+      result[provider].error = error && error.name === "TimeoutError" ? "timeout" : "network_error";
+    }
+  };
+
   const checks = [];
   if (result.replicate.configured) {
-    checks.push(fetch("https://api.replicate.com/v1/account", {
-      headers: { Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}` },
-      signal: AbortSignal.timeout(10000)
-    }).then(r => { result.replicate.connected = r.ok; }).catch(() => {}));
+    checks.push(check("replicate", "https://api.replicate.com/v1/account", {
+      Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}`
+    }));
   }
   if (result.elevenlabs.configured) {
-    checks.push(fetch("https://api.elevenlabs.io/v1/user", {
-      headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY },
-      signal: AbortSignal.timeout(10000)
-    }).then(r => { result.elevenlabs.connected = r.ok; }).catch(() => {}));
+    checks.push(check("elevenlabs", "https://api.elevenlabs.io/v1/user", {
+      "xi-api-key": process.env.ELEVENLABS_API_KEY
+    }));
   }
 
   await Promise.all(checks);
