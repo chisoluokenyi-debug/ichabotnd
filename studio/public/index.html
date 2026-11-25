@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#090d18">
+<meta name="description" content="Create AI videos, voiceovers and multilingual content with ICHA AI Studio.">
+<title>ICHA AI Studio — Create beyond limits</title>
+<style>
+:root{color-scheme:dark;--bg:#090d18;--panel:#111827;--muted:#9aa7bd;--line:#263249;--cyan:#54e3d0;--violet:#9a82ff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 75% -10%,#26305a 0,transparent 38%),var(--bg);color:#f6f8ff;font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+a{color:inherit;text-decoration:none}.wrap{max-width:1160px;margin:auto;padding:0 24px}
+header{height:76px;border-bottom:1px solid #ffffff14;display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:.2px}.mark{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--violet));display:grid;place-items:center;color:#07111c;font-weight:950}
+.nav{display:flex;align-items:center;gap:24px;color:#bdc7d8;font-size:14px}.nav a:hover{color:white}.pill{border:1px solid #ffffff2a;border-radius:999px;padding:10px 17px}
+.hero{padding:86px 0 58px;text-align:center}.eyebrow{display:inline-flex;gap:8px;align-items:center;border:1px solid #54e3d044;background:#54e3d00d;color:var(--cyan);padding:7px 13px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+h1{font-size:clamp(42px,7vw,76px);line-height:1.02;letter-spacing:-.055em;max-width:850px;margin:23px auto 18px}.gradient{background:linear-gradient(90deg,#60e7d2,#a28bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lead{max-width:650px;margin:0 auto;color:#aab6ca;font-size:18px}.actions{display:flex;justify-content:center;gap:12px;margin:30px 0 0;flex-wrap:wrap}.btn{border:0;border-radius:12px;padding:13px 20px;font-weight:800;background:linear-gradient(110deg,var(--cyan),#a28bff);color:#08111c;cursor:pointer}.btn.secondary{background:#ffffff0a;border:1px solid #ffffff25;color:#f6f8ff}
+.preview{max-width:980px;margin:56px auto 0;border:1px solid #ffffff20;border-radius:22px;background:linear-gradient(145deg,#141d31,#0e1422);padding:16px;box-shadow:0 30px 100px #0008;text-align:left}
+.preview-top{display:flex;justify-content:space-between;align-items:center;padding:8px 8px 17px;color:#b8c4d8;font-size:13px}.dots{display:flex;gap:6px}.dots i{width:7px;height:7px;background:#6b7890;border-radius:50%}
+.workspace{display:grid;grid-template-columns:210px 1fr;gap:14px}.side,.canvas,.feature{background:#0b1220;border:1px solid #ffffff12;border-radius:14px}.side{padding:16px}.side b{display:block;margin:3px 0 15px}.side span{display:block;padding:10px 9px;border-radius:8px;color:#9eabc0;font-size:13px}.side span:first-of-type{background:#54e3d018;color:var(--cyan)}
+.canvas{padding:18px;min-height:230px}.canvas-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px}.canvas-head strong{font-size:14px}.tag{font-size:11px;color:var(--cyan);background:#54e3d015;padding:5px 9px;border-radius:99px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.tile{min-height:145px;border-radius:11px;padding:13px;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;position:relative;background:linear-gradient(145deg,#293c60,#171e39)}.tile:nth-child(2){background:linear-gradient(145deg,#4b3264,#20213d)}.tile:nth-child(3){background:linear-gradient(145deg,#245c61,#192b43)}.tile:before{content:"";position:absolute;width:120px;height:120px;border-radius:50%;background:#ffffff14;top:-35px;right:-20px}.tile b,.tile small{position:relative}.tile small{color:#d0d8e8;margin-top:4px}
+section.features{padding:42px 0 80px}.section-title{text-align:center;font-size:30px;letter-spacing:-.03em;margin:0 0 10px}.section-lead{text-align:center;color:var(--muted);margin:0 0 28px}.feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.feature{padding:22px;background:linear-gradient(145deg,#141e31,#0e1421)}.icon{width:42px;height:42px;border-radius:12px;background:#54e3d018;color:var(--cyan);display:grid;place-items:center;font-size:20px}.feature h3{margin:15px 0 7px}.feature p{color:var(--muted);margin:0;font-size:14px}
+.status{margin:0 auto 25px;max-width:560px;padding:12px 15px;border:1px solid #e6b75a55;background:#e6b75a10;border-radius:12px;color:#e9ca8d;font-size:13px}
+footer{border-top:1px solid #ffffff14;color:#8290a8;padding:25px 0;font-size:13px}.foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+@media(max-width:700px){.nav a:not(.pill){display:none}.hero{padding-top:60px}.workspace{grid-template-columns:1fr}.side{display:none}.tiles{grid-template-columns:1fr}.tile{min-height:110px}.feature-grid{grid-template-columns:1fr}.lead{font-size:16px}}
+</style>
+</head>
+<body>
+<header class="wrap">
+  <a class="brand" href="/"><span class="mark">I</span><span>ICHA <span class="gradient">AI STUDIO</span></span></a>
+  <nav class="nav"><a href="#tools">AI tools</a><a href="#how">How it works</a><a class="pill" href="#tools">Explore studio ↗</a></nav>
+</header>
+<main>
+  <section class="hero wrap">
+    <span class="eyebrow">✦ Your creative AI workspace</span>
+    <h1>Turn your ideas into <span class="gradient">videos and voices.</span></h1>
+    <p class="lead">Create attention-grabbing videos, natural voiceovers and multilingual content from one simple creative studio.</p>
+    <div class="actions"><a class="btn" href="#tools">Explore the studio</a><a class="btn secondary" href="#how">See what you can create</a></div>
+    <div class="preview">
+      <div class="preview-top"><div class="dots"><i></i><i></i><i></i></div><span>ICHA AI Studio / Creative workspace</span><span>Preview</span></div>
+      <div class="workspace">
+        <aside class="side"><b>Your workspace</b><span>✦ Create video</span><span>◉ Voice studio</span><span>▤ My projects</span><span>⚙ Settings</span></aside>
+        <div class="canvas"><div class="canvas-head"><strong>What would you like to create?</strong><span class="tag">AI STUDIO</span></div>
+          <div class="tiles"><div class="tile"><b>Text to video</b><small>Bring a prompt to life</small></div><div class="tile"><b>Voice studio</b><small>Create expressive voiceovers</small></div><div class="tile"><b>AI content</b><small>Reach audiences in more languages</small></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="features wrap" id="tools">
+    <h2 class="section-title">Everything you need to create</h2>
+    <p class="section-lead">A growing set of AI tools for creators, businesses and publishers.</p>
+    <div class="status" id="setup-status">Checking studio setup…</div>
+    <div class="feature-grid">
+      <article class="feature"><div class="icon">▣</div><h3>AI video generation</h3><p>Turn text prompts and images into short videos for adverts, social media and product storytelling.</p></article>
+      <article class="feature"><div class="icon">♫</div><h3>Voice cloning & voiceovers</h3><p>Create a voice model from recordings you own or have permission to use, then generate spoken content.</p></article>
+      <article class="feature"><div class="icon">文</div><h3>Multilingual content</h3><p>Prepare scripts, captions and voiceovers for audiences across Nigeria and around the world.</p></article>
+    </div>
+  </section>
+  <section class="features wrap" id="how" style="padding-top:0">
+    <h2 class="section-title">Made for your next big idea</h2>
+    <p class="section-lead">ICHA AI Studio is a separate product from ICHA BOT, built under ICHA GLOBAL LIMITED.</p>
+  </section>
+</main>
+<footer><div class="wrap foot"><span>© <span id="year"></span> ICHA AI Studio · ICHA GLOBAL LIMITED</span><span>Use voice cloning only with the speaker’s consent.</span></div></footer>
+<script>
+document.getElementById("year").textContent = new Date().getFullYear();
+fetch("/api/status").then(r=>r.json()).then(s=>{
+ const el=document.getElementById("setup-status");
+ if(s.videoProviderConfigured && s.voiceProviderConfigured){el.textContent="Provider connections detected. Account security and usage controls are still being prepared.";el.style.color="#a9e9d8";el.style.borderColor="#54e3d044"}
+ else {el.textContent="Studio preview is online. Video and voice providers still need to be connected before generation can be enabled."}
+}).catch(()=>{document.getElementById("setup-status").textContent="Studio preview is online."});
+</script>
+</body>
+</html>
