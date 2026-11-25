@@ -43,8 +43,9 @@ app.get("/api/appwrite-check", async (_req, res) => {
   }
 
   try {
-    let endpoint = process.env.APPWRITE_ENDPOINT.trim().replace(/\\/+$/, "");
-    if (!/\\/v1$/i.test(endpoint)) endpoint += "/v1";
+    let endpoint = process.env.APPWRITE_ENDPOINT.trim();
+    while (endpoint.endsWith("/")) endpoint = endpoint.slice(0, -1);
+    if (!endpoint.toLowerCase().endsWith("/v1")) endpoint += "/v1";
     const databaseId = encodeURIComponent(process.env.APPWRITE_DATABASE_ID);
     const tableId = encodeURIComponent(process.env.APPWRITE_CUSTOMERS_TABLE_ID);
     const response = await fetch(
