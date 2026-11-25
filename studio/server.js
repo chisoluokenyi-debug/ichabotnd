@@ -24,6 +24,67 @@ app.get("/api/status", (_req, res) => {
 
 // Verify both credentials with non-billable account/profile requests.
 // Return only HTTP status and a safe error category; never return keys or provider response bodies.
+// Check Appwrite access to the configured customer table without exposing credentials.
+app.get("/api/appwrite-check", async (_req, res) => {
+  const required = [
+    "APPWRITE_ENDPOINT",
+    "APPWRITE_PROJECT_ID",
+    "APPWRITE_DATABASE_ID",
+    "APPWRITE_CUSTOMERS_TABLE_ID",
+    "APPWRITE_API_KEY"
+  ];
+  const missing = required.filter((name) => !process.env[name]);
+  if (missing.length) {
+    return res.status(503).json({
+      configured: false,
+      connected: false,
+      missing
+    });
+  }
+
+  try {
+    let endpoint = process.env.APPWRITE_ENDPOINT.trim().replace(/\\/+$/, "");
+    if (!/\\/v1$/i.test(endpoint)) endpoint += "/v1";
+    const databaseId = encodeURIComponent(process.env.APPWRITE_DATABASE_ID);
+    const tableId = encodeURIComponent(process.env.APPWRITE_CUSTOMERS_TABLE_ID);
+    const response = await fetch(
+      `${endpoint}/databases/${databaseId}/tables/${tableId}`,
+      {
+        method: "GET",
+        headers: {
+          "X-Appwrite-Project": process.env.APPWRITE_PROJECT_ID,
+          "X-Appwrite-Key": process.env.APPWRITE_API_KEY
+        },
+        signal: AbortSignal.timeout(10000)
+      }
+    );
+    if (!response.ok) {
+      return res.status(502).json({
+        configured: true,
+        connected: false,
+        httpStatus: response.status,
+        error: response.status === 401 ? "unauthorized"
+          : response.status === 403 ? "permission_denied"
+          : response.status === 404 ? "database_or_table_not_found"
+          : response.status === 429 ? "rate_limited"
+          : "appwrite_error"
+      });
+    }
+    return res.json({
+      configured: true,
+      connected: true,
+      databaseAccess: true,
+      customersTableAccess: true
+    });
+  } catch (error) {
+    return res.status(502).json({
+      configured: true,
+      connected: false,
+      error: error && error.name === "TimeoutError" ? "timeout" : "network_error"
+    });
+  }
+});
+
 app.get("/api/provider-check", async (_req, res) => {
   const result = {
     replicate: { configured: Boolean(process.env.REPLICATE_API_TOKEN), connected: false },
