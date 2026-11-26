@@ -49,7 +49,7 @@ app.get("/api/appwrite-check", async (_req, res) => {
     const databaseId = encodeURIComponent(process.env.APPWRITE_DATABASE_ID);
     const tableId = encodeURIComponent(process.env.APPWRITE_CUSTOMERS_TABLE_ID);
     const response = await fetch(
-      `${endpoint}/databases/${databaseId}/tables/${tableId}`,
+      `${endpoint}/tablesdb/${databaseId}/tables/${tableId}`,
       {
         method: "GET",
         headers: {
