@@ -93,7 +93,8 @@ async function ensureCustomerProfileTable() {
 const PROFILE_TABLE_ID = "icha_customer_profiles";
 const SESSION_COOKIE = "icha_session";
 function appwriteBase() {
-  let value = (process.env.APPWRITE_ENDPOINT || "").trim().replace(/\\/+$/, "");
+  let value = (process.env.APPWRITE_ENDPOINT || "").trim();
+  while (value.endsWith("/")) value = value.slice(0, -1);
   if (value && !value.toLowerCase().endsWith("/v1")) value += "/v1";
   return value;
 }
