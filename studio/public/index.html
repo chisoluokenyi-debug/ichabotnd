@@ -82,7 +82,7 @@ input,select,textarea{font:inherit;max-width:100%}
   <section class="hero wrap">
     <span class="eyebrow">✦ Studio preview · launch in progress</span>
     <h1>Your creative workspace is <span class="gradient">coming soon.</span></h1>
-    <p class="lead">ICHA AI Studio is being prepared for creators and businesses. Customer accounts, payments and AI generation are not yet enabled.</p>
+    <p class="lead">ICHA AI Studio is being prepared for creators and businesses. Accounts are available, but AI generation and payments are not yet enabled.</p>
     <div class="actions"><a class="btn" href="#tools">View planned features</a><a class="btn secondary" href="#how">Launch information</a></div>
     <div class="preview">
       <div class="preview-top"><div class="dots"><i></i><i></i><i></i></div><span>ICHA AI Studio / Creative workspace</span><span>Preview</span></div>
@@ -96,8 +96,9 @@ input,select,textarea{font:inherit;max-width:100%}
   </section>
   <section class="features wrap" id="tools">
     <h2 class="section-title">What we are building</h2>
-    <p class="section-lead">Planned features — not yet available for customer use.</p>
+    <p class="section-lead">Planned features — generation is not yet available for customer use.</p>
     <div class="status" id="setup-status">Checking studio setup…</div>
+    <p class="section-lead" style="max-width:720px;margin:-12px auto 28px">Launch offer planned: 5 free videos per customer for lifetime use, subject to the shared monthly AI budget. The ₦4,000 monthly budget is a target, not an active spending cap yet. We will not enable generation until usage and cost limits are enforced.</p>
     <div class="feature-grid">
       <article class="feature"><div class="icon">▣</div><h3>AI video generation</h3><p>Planned. Will be enabled after customer accounts, payment controls and usage limits are tested.</p></article>
       <article class="feature"><div class="icon">♫</div><h3>Voice studio</h3><p>Planned. Voice cloning will require clear, documented permission from the speaker.</p></article>
@@ -107,7 +108,7 @@ input,select,textarea{font:inherit;max-width:100%}
 
   <section class="features wrap" id="account" style="padding-top:0">
     <h2 class="section-title">Customer account</h2>
-    <p class="section-lead">Create an account or sign in to manage your ICHA AI Studio profile.</p>
+    <p class="section-lead">Create an account or sign in to manage your ICHA AI Studio profile. Creating an account does not start AI generation or charge you.</p>
     <div class="feature" style="max-width:520px;margin:auto">
       <div id="auth-message" role="status" aria-live="polite" style="color:#aab6ca;margin-bottom:12px">Your account is private and protected.</div>
       <form id="auth-form">
@@ -128,7 +129,7 @@ input,select,textarea{font:inherit;max-width:100%}
   </section>
   <section class="features wrap" id="how" style="padding-top:0">
     <h2 class="section-title">Made for your next big idea</h2>
-    <p class="section-lead">ICHA AI Studio is a separate product from ICHA BOT, built under ICHA GLOBAL LIMITED. Registration, payments and generation are still being completed.</p>
+    <p class="section-lead">ICHA AI Studio is a separate product from ICHA BOT, built under ICHA GLOBAL LIMITED. Registration is available; payments and generation remain disabled while safeguards are completed.</p>
   </section>
 </main>
 <footer><div class="wrap foot"><span>© <span id="year"></span> ICHA AI Studio · ICHA GLOBAL LIMITED</span><span>Use voice cloning only with the speaker’s consent.</span></div></footer>
@@ -151,8 +152,8 @@ refreshAccount();
 
 fetch("/api/status").then(r=>r.json()).then(s=>{
  const el=document.getElementById("setup-status");
- if(s.videoProviderConfigured && s.voiceProviderConfigured){el.textContent="Provider connections detected. Account security and usage controls are still being prepared.";el.style.color="#a9e9d8";el.style.borderColor="#54e3d044"}
- else {el.textContent="Studio preview is online. Video and voice providers still need to be connected before generation can be enabled."}
+ if(s.videoProviderConfigured && s.voiceProviderConfigured){el.textContent="Video and voice provider connections are detected. Generation is intentionally disabled until usage metering and the shared monthly spending cap are enforced.";el.style.color="#e9ca8d";el.style.borderColor="#e6b75a55"}
+ else {el.textContent="Studio preview is online. One or more AI providers still need to be connected before generation can be enabled."}
 }).catch(()=>{document.getElementById("setup-status").textContent="Studio preview is online."});
 </script>
 </body>
