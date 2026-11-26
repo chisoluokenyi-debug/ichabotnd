@@ -188,8 +188,11 @@ app.get("/api/status", (_req, res) => {
     generationEnabled: false,
     freeVideosPerCustomer: FREE_VIDEO_LIMIT_PER_CUSTOMER,
     freeVideoPolicy: FREE_VIDEO_POLICY,
+    freeVideosActive: false,
     monthlyAiBudgetNgn: MONTHLY_AI_BUDGET_NGN,
-    note: "Launch offer configured: five lifetime free videos per customer. Generation remains disabled until provider pricing, usage metering and hard spending controls are implemented and tested."
+    monthlyAiBudgetEnforced: false,
+    usageLedgerReady: false,
+    note: "Planned launch offer: five lifetime free videos per customer, subject to the overall monthly AI budget. The ₦4,000 budget is a target only and is not enforced yet. Generation is disabled until durable usage metering, atomic budget reservations, provider cost controls and failure handling are implemented and tested."
   });
 });
 
