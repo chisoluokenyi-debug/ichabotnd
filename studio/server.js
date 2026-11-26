@@ -135,7 +135,7 @@ app.post("/api/auth/register", async (req, res) => {
     const profile = await fetch(appwriteBase() + "/tablesdb/" + encodeURIComponent(process.env.APPWRITE_DATABASE_ID) + "/tables/" + PROFILE_TABLE_ID + "/rows", {
       method: "POST",
       headers: { "X-Appwrite-Project": process.env.APPWRITE_PROJECT_ID, "X-Appwrite-Key": process.env.APPWRITE_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ rowId: created.body.$id, data: { user_id: created.body.$id, full_name: name, email, status: "pending", credits: 0, created_at: new Date().toISOString() }, permissions: ["read(\\\"user:" + created.body.$id + "\\")", "update(\\\"user:" + created.body.$id + "\\")"] }),
+      body: JSON.stringify({ rowId: created.body.$id, data: { user_id: created.body.$id, full_name: name, email, status: "pending", credits: 0, created_at: new Date().toISOString() }, permissions: [`read("user:${created.body.$id}")`, `update("user:${created.body.$id}")`] }),
       signal: AbortSignal.timeout(12000)
     });
     if (!profile.ok) {
