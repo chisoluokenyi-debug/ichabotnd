@@ -58,6 +58,28 @@ footer{border-top:1px solid #ffffff14;color:#8290a8;padding:25px 0;font-size:13p
       <article class="feature"><div class="icon">文</div><h3>Multilingual content</h3><p>Planned tools for creators and businesses reaching audiences in Nigeria and worldwide.</p></article>
     </div>
   </section>
+
+  <section class="features wrap" id="account" style="padding-top:0">
+    <h2 class="section-title">Customer account</h2>
+    <p class="section-lead">Create an account or sign in to manage your ICHA AI Studio profile.</p>
+    <div class="feature" style="max-width:520px;margin:auto">
+      <div id="auth-message" role="status" aria-live="polite" style="color:#aab6ca;margin-bottom:12px">Your account is private and protected.</div>
+      <form id="auth-form">
+        <label for="auth-name">Full name</label>
+        <input id="auth-name" name="name" autocomplete="name" maxlength="128" placeholder="Your full name" required style="display:block;width:100%;margin:6px 0 14px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
+        <label for="auth-email">Email address</label>
+        <input id="auth-email" name="email" type="email" autocomplete="email" required placeholder="you@example.com" style="display:block;width:100%;margin:6px 0 14px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
+        <label for="auth-password">Password (minimum 8 characters)</label>
+        <input id="auth-password" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters" style="display:block;width:100%;margin:6px 0 16px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
+        <div class="actions" style="justify-content:flex-start;margin-top:0">
+          <button class="btn" type="submit" id="register-btn">Create account</button>
+          <button class="btn secondary" type="button" id="login-btn">Sign in</button>
+          <button class="btn secondary" type="button" id="logout-btn" hidden>Sign out</button>
+        </div>
+      </form>
+      <div id="account-details" hidden style="margin-top:18px;padding:14px;border:1px solid #54e3d044;border-radius:10px"></div>
+    </div>
+  </section>
   <section class="features wrap" id="how" style="padding-top:0">
     <h2 class="section-title">Made for your next big idea</h2>
     <p class="section-lead">ICHA AI Studio is a separate product from ICHA BOT, built under ICHA GLOBAL LIMITED. Registration, payments and generation are still being completed.</p>
@@ -65,7 +87,22 @@ footer{border-top:1px solid #ffffff14;color:#8290a8;padding:25px 0;font-size:13p
 </main>
 <footer><div class="wrap foot"><span>© <span id="year"></span> ICHA AI Studio · ICHA GLOBAL LIMITED</span><span>Use voice cloning only with the speaker’s consent.</span></div></footer>
 <script>
+
 document.getElementById("year").textContent = new Date().getFullYear();
+const authForm=document.getElementById("auth-form");
+const authMessage=document.getElementById("auth-message");
+const authName=document.getElementById("auth-name");
+const authPassword=document.getElementById("auth-password");
+const accountDetails=document.getElementById("account-details");
+const logoutBtn=document.getElementById("logout-btn");
+function authNotice(message,isError=false){authMessage.textContent=message;authMessage.style.color=isError?"#ffb4b4":"#a9e9d8"}
+async function authRequest(path,body){const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify(body)});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Request failed.");return data}
+async function refreshAccount(){try{const response=await fetch("/api/auth/me",{credentials:"same-origin"});const data=await response.json();if(data.authenticated){accountDetails.hidden=false;accountDetails.textContent="Signed in as "+data.user.name+" ("+data.user.email+"). Your customer profile is ready.";authName.hidden=true;authPassword.hidden=true;document.querySelector('label[for="auth-name"]').hidden=true;document.querySelector('label[for="auth-password"]').hidden=true;document.getElementById("register-btn").hidden=true;document.getElementById("login-btn").hidden=true;logoutBtn.hidden=false;authNotice("You are signed in.");}else{accountDetails.hidden=true;authName.hidden=false;authPassword.hidden=false;document.querySelector('label[for="auth-name"]').hidden=false;document.querySelector('label[for="auth-password"]').hidden=false;document.getElementById("register-btn").hidden=false;document.getElementById("login-btn").hidden=false;logoutBtn.hidden=true;}}catch(_){authNotice("Account service is temporarily unavailable.",true)}}
+authForm.addEventListener("submit",async event=>{event.preventDefault();try{await authRequest("/api/auth/register",{name:authName.value,email:document.getElementById("auth-email").value,password:authPassword.value});authNotice("Account created successfully.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
+document.getElementById("login-btn").addEventListener("click",async()=>{try{await authRequest("/api/auth/login",{email:document.getElementById("auth-email").value,password:authPassword.value});authNotice("Signed in successfully.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
+logoutBtn.addEventListener("click",async()=>{try{await authRequest("/api/auth/logout",{});authForm.reset();authNotice("You have signed out.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
+refreshAccount();
+
 fetch("/api/status").then(r=>r.json()).then(s=>{
  const el=document.getElementById("setup-status");
  if(s.videoProviderConfigured && s.voiceProviderConfigured){el.textContent="Provider connections detected. Account security and usage controls are still being prepared.";el.style.color="#a9e9d8";el.style.borderColor="#54e3d044"}
