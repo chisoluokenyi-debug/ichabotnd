@@ -4,6 +4,10 @@ const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+// Launch offer and conservative application-side spend ceiling.
+const FREE_VIDEO_LIMIT_PER_CUSTOMER = 5;
+const FREE_VIDEO_POLICY = "lifetime";
+const MONTHLY_AI_BUDGET_NGN = 4000;
 app.disable("x-powered-by");
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: "1mb" }));
@@ -182,7 +186,10 @@ app.get("/api/status", (_req, res) => {
     videoProviderConfigured: Boolean(process.env.REPLICATE_API_TOKEN),
     voiceProviderConfigured: Boolean(process.env.ELEVENLABS_API_KEY),
     generationEnabled: false,
-    note: "Provider credentials are stored server-side. Generation will be enabled after customer sign-in, consent and usage limits are in place."
+    freeVideosPerCustomer: FREE_VIDEO_LIMIT_PER_CUSTOMER,
+    freeVideoPolicy: FREE_VIDEO_POLICY,
+    monthlyAiBudgetNgn: MONTHLY_AI_BUDGET_NGN,
+    note: "Launch offer configured: five lifetime free videos per customer. Generation remains disabled until provider pricing, usage metering and hard spending controls are implemented and tested."
   });
 });
 
