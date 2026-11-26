@@ -25,6 +25,52 @@ section.features{padding:42px 0 80px}.section-title{text-align:center;font-size:
 .status{margin:0 auto 25px;max-width:560px;padding:12px 15px;border:1px solid #e6b75a55;background:#e6b75a10;border-radius:12px;color:#e9ca8d;font-size:13px}
 footer{border-top:1px solid #ffffff14;color:#8290a8;padding:25px 0;font-size:13px}.foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
 @media(max-width:700px){.nav a:not(.pill){display:none}.hero{padding-top:60px}.workspace{grid-template-columns:1fr}.side{display:none}.tiles{grid-template-columns:1fr}.tile{min-height:110px}.feature-grid{grid-template-columns:1fr}.lead{font-size:16px}}
+
+/* Additional phone-first refinements */
+html{scroll-behavior:smooth;scroll-padding-top:18px}
+img,svg,video,canvas{max-width:100%;height:auto}
+button,a,input{touch-action:manipulation}
+button,.btn,.pill{min-height:44px}
+input,select,textarea{font:inherit;max-width:100%}
+.preview,.canvas,.feature,.status{min-width:0;max-width:100%}
+.preview-top{min-width:0;flex-wrap:wrap;gap:8px}
+.preview-top>span{overflow-wrap:anywhere}
+.workspace,.tiles,.feature-grid{min-width:0}
+.tile{min-width:0;overflow-wrap:anywhere}
+@media(max-width:700px){
+  .wrap{padding-left:16px;padding-right:16px}
+  header.wrap{min-height:68px;height:auto;gap:12px;padding-top:10px;padding-bottom:10px}
+  .brand{font-size:14px;gap:8px;min-width:0}
+  .mark{width:34px;height:34px;flex:0 0 34px}
+  .nav{gap:8px;min-width:0}
+  .nav .pill{padding:9px 12px;font-size:12px;white-space:nowrap}
+  .hero{padding:48px 0 38px}
+  h1{font-size:clamp(36px,10vw,52px);line-height:1.06;overflow-wrap:anywhere}
+  .lead{font-size:16px;line-height:1.6}
+  .actions{gap:10px}
+  .actions .btn{width:100%;min-height:48px;display:inline-flex;align-items:center;justify-content:center}
+  .preview{margin-top:34px;padding:10px;border-radius:16px}
+  .preview-top{font-size:11px}
+  .canvas{padding:12px}
+  .canvas-head{gap:8px;align-items:flex-start;flex-wrap:wrap}
+  .tiles{grid-template-columns:minmax(0,1fr)}
+  .tile{min-height:104px}
+  section.features{padding-top:28px;padding-bottom:48px}
+  .section-title{font-size:clamp(24px,7vw,30px)}
+  .feature-grid{grid-template-columns:minmax(0,1fr);gap:12px}
+  .feature{padding:18px}
+  #account input{font-size:16px;min-height:48px}
+  #account .actions{display:grid;grid-template-columns:1fr}
+  #account .actions button{width:100%;min-height:48px}
+  .foot{flex-direction:column;align-items:flex-start}
+}
+@media(max-width:360px){
+  .wrap{padding-left:12px;padding-right:12px}
+  .brand{font-size:12px}
+  .nav .pill{font-size:11px;padding:8px 9px}
+  h1{font-size:34px}
+}
+
 </style>
 </head>
 <body>
