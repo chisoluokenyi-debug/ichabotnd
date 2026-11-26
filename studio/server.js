@@ -89,6 +89,89 @@ async function ensureCustomerProfileTable() {
   }
 }
 
+
+const PROFILE_TABLE_ID = "icha_customer_profiles";
+const SESSION_COOKIE = "icha_session";
+function appwriteBase() {
+  let value = (process.env.APPWRITE_ENDPOINT || "").trim().replace(/\\/+$/, "");
+  if (value && !value.toLowerCase().endsWith("/v1")) value += "/v1";
+  return value;
+}
+function sessionFrom(req) { return req.cookies?.[SESSION_COOKIE] || req.headers["x-icha-session"] || ""; }
+app.use((req, _res, next) => {
+  const cookie = req.headers.cookie || "";
+  const match = cookie.match(/(?:^|;\\s*)icha_session=([^;]+)/);
+  req.cookies = { [SESSION_COOKIE]: match ? decodeURIComponent(match[1]) : "" };
+  next();
+});
+async function accountRequest(pathname, options = {}, session = "") {
+  const headers = { "X-Appwrite-Project": process.env.APPWRITE_PROJECT_ID, "Content-Type": "application/json" };
+  if (session) headers["X-Appwrite-Session"] = session;
+  const response = await fetch(appwriteBase() + pathname, { ...options, headers: { ...headers, ...(options.headers || {}) }, signal: AbortSignal.timeout(12000) });
+  let body = {};
+  try { body = await response.json(); } catch (_) {}
+  return { response, body };
+}
+async function requireAccount(req) {
+  const session = sessionFrom(req);
+  if (!session) return null;
+  const result = await accountRequest("/account", { method: "GET" }, session);
+  return result.response.ok ? { account: result.body, session } : null;
+}
+app.post("/api/auth/register", async (req, res) => {
+  const name = String(req.body?.name || "").trim().slice(0, 128);
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
+  if (!name || !/^\\S+@\\S+\\.\\S+$/.test(email) || password.length < 8) {
+    return res.status(400).json({ error: "Enter your name, a valid email, and a password of at least 8 characters." });
+  }
+  try {
+    const created = await accountRequest("/account", { method: "POST", body: JSON.stringify({ userId: "unique()", name, email, password }) });
+    if (!created.response.ok) return res.status(created.response.status === 409 ? 409 : 400).json({ error: created.body.message || "Could not create account." });
+    const login = await accountRequest("/account/sessions", { method: "POST", body: JSON.stringify({ email, password }) });
+    if (!login.response.ok || !login.body.secret) return res.status(502).json({ error: "Account created. Please sign in." });
+    const session = login.body.secret;
+    const profile = await fetch(appwriteBase() + "/tablesdb/" + encodeURIComponent(process.env.APPWRITE_DATABASE_ID) + "/tables/" + PROFILE_TABLE_ID + "/rows", {
+      method: "POST",
+      headers: { "X-Appwrite-Project": process.env.APPWRITE_PROJECT_ID, "X-Appwrite-Key": process.env.APPWRITE_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ rowId: created.body.$id, data: { user_id: created.body.$id, full_name: name, email, status: "pending", credits: 0, created_at: new Date().toISOString() }, permissions: ["read(\\\"user:" + created.body.$id + "\\")", "update(\\\"user:" + created.body.$id + "\\")"] }),
+      signal: AbortSignal.timeout(12000)
+    });
+    if (!profile.ok) {
+      console.error("Customer profile row creation failed with HTTP " + profile.status);
+      return res.status(502).json({ error: "Account created, but profile setup needs attention. Please contact support." });
+    }
+    res.cookie(SESSION_COOKIE, session, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 14 * 24 * 60 * 60 * 1000 });
+    return res.status(201).json({ ok: true, name });
+  } catch (_) { return res.status(502).json({ error: "Account service temporarily unavailable." }); }
+});
+app.post("/api/auth/login", async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
+  if (!email || !password) return res.status(400).json({ error: "Enter your email and password." });
+  try {
+    const result = await accountRequest("/account/sessions", { method: "POST", body: JSON.stringify({ email, password }) });
+    if (!result.response.ok || !result.body.secret) return res.status(401).json({ error: "Email or password is incorrect." });
+    res.cookie(SESSION_COOKIE, result.body.secret, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 14 * 24 * 60 * 60 * 1000 });
+    return res.json({ ok: true });
+  } catch (_) { return res.status(502).json({ error: "Account service temporarily unavailable." }); }
+});
+app.get("/api/auth/me", async (req, res) => {
+  try {
+    const current = await requireAccount(req);
+    if (!current) return res.status(401).json({ authenticated: false });
+    return res.json({ authenticated: true, user: { id: current.account.$id, name: current.account.name, email: current.account.email } });
+  } catch (_) { return res.status(502).json({ error: "Could not verify your session." }); }
+});
+app.post("/api/auth/logout", async (req, res) => {
+  try {
+    const session = sessionFrom(req);
+    if (session) await accountRequest("/account/sessions/current", { method: "DELETE" }, session);
+  } catch (_) {}
+  res.clearCookie(SESSION_COOKIE, { httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+  return res.json({ ok: true });
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", app: "ICHA AI Studio" });
 });
