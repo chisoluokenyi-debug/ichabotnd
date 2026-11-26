@@ -86,6 +86,40 @@ app.get("/api/appwrite-check", async (_req, res) => {
   }
 });
 
+// Temporary schema audit: exposes column metadata only, never customer rows or credentials.
+app.get("/api/schema-audit-icha-20261126", async (_req, res) => {
+  const required = ["APPWRITE_ENDPOINT", "APPWRITE_PROJECT_ID", "APPWRITE_DATABASE_ID", "APPWRITE_CUSTOMERS_TABLE_ID", "APPWRITE_API_KEY"];
+  const missing = required.filter((name) => !process.env[name]);
+  if (missing.length) return res.status(503).json({ configured: false, missing });
+  try {
+    let endpoint = process.env.APPWRITE_ENDPOINT.trim();
+    while (endpoint.endsWith("/")) endpoint = endpoint.slice(0, -1);
+    if (!endpoint.toLowerCase().endsWith("/v1")) endpoint += "/v1";
+    const response = await fetch(
+      `${endpoint}/tablesdb/${encodeURIComponent(process.env.APPWRITE_DATABASE_ID)}/tables/${encodeURIComponent(process.env.APPWRITE_CUSTOMERS_TABLE_ID)}`,
+      { headers: { "X-Appwrite-Project": process.env.APPWRITE_PROJECT_ID, "X-Appwrite-Key": process.env.APPWRITE_API_KEY }, signal: AbortSignal.timeout(10000) }
+    );
+    if (!response.ok) return res.status(502).json({ connected: false, httpStatus: response.status });
+    const table = await response.json();
+    return res.json({
+      connected: true,
+      tableName: table.name || null,
+      tableId: table.$id || null,
+      columns: (table.columns || []).map((column) => ({
+        key: column.key,
+        type: column.type,
+        required: column.required,
+        array: column.array,
+        size: column.size,
+        default: column.default ?? null,
+        status: column.status
+      }))
+    });
+  } catch (error) {
+    return res.status(502).json({ connected: false, error: error && error.name === "TimeoutError" ? "timeout" : "network_error" });
+  }
+});
+
 app.get("/api/provider-check", async (_req, res) => {
   const result = {
     replicate: { configured: Boolean(process.env.REPLICATE_API_TOKEN), connected: false },
