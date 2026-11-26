@@ -101,7 +101,7 @@ function appwriteBase() {
 function sessionFrom(req) { return req.cookies?.[SESSION_COOKIE] || req.headers["x-icha-session"] || ""; }
 app.use((req, _res, next) => {
   const cookie = req.headers.cookie || "";
-  const match = cookie.match(/(?:^|;\\s*)icha_session=([^;]+)/);
+  const match = cookie.match(/(?:^|;\s*)icha_session=([^;]+)/);
   req.cookies = { [SESSION_COOKIE]: match ? decodeURIComponent(match[1]) : "" };
   next();
 });
@@ -123,7 +123,7 @@ app.post("/api/auth/register", async (req, res) => {
   const name = String(req.body?.name || "").trim().slice(0, 128);
   const email = String(req.body?.email || "").trim().toLowerCase();
   const password = String(req.body?.password || "");
-  if (!name || !/^\\S+@\\S+\\.\\S+$/.test(email) || password.length < 8) {
+  if (!name || !/^\S+@\S+\.\S+$/.test(email) || password.length < 8) {
     return res.status(400).json({ error: "Enter your name, a valid email, and a password of at least 8 characters." });
   }
   try {
