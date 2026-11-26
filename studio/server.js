@@ -72,7 +72,14 @@ async function ensureCustomerProfileTable() {
     });
 
     if (!created.ok) {
-      console.error("Appwrite profile table creation failed with HTTP " + created.status + ".");
+      let appwriteError = {};
+      try { appwriteError = await created.json(); } catch (_) {}
+      const safeType = typeof appwriteError.type === "string" ? appwriteError.type : "unknown";
+      const safeMessage = typeof appwriteError.message === "string"
+        ? appwriteError.message.slice(0, 240).replace(/[\\r\\n]+/g, " ")
+        : "No error message returned";
+      console.error("Appwrite profile table creation failed: HTTP " + created.status +
+        ", type=" + safeType + ", message=" + safeMessage);
       return;
     }
     console.log("Appwrite customer profile table created.");
