@@ -106,6 +106,20 @@ input,select,textarea{font:inherit;max-width:100%}
     </div>
   </section>
 
+  <section class="features wrap" id="bank-transfer" style="padding-top:0">
+    <h2 class="section-title">Bank transfer</h2>
+    <p class="section-lead">OPay transfer details for ICHA AI Studio.</p>
+    <div class="feature" style="max-width:520px;margin:auto">
+      <p style="color:#e9ca8d;margin-top:0">Payment processing is not active yet. Please contact support and confirm your order before sending money. A transfer is not automatically verified or credited by this website.</p>
+      <dl style="display:grid;grid-template-columns:1fr auto;gap:12px;margin:0">
+        <dt style="color:#9aa7bd">Bank</dt><dd style="margin:0;font-weight:700">OPay</dd>
+        <dt style="color:#9aa7bd">Account name</dt><dd style="margin:0;font-weight:700">Odo Philip</dd>
+        <dt style="color:#9aa7bd">Account number</dt><dd style="margin:0;font-weight:700;letter-spacing:.04em">8129183454</dd>
+      </dl>
+      <button class="btn secondary" type="button" id="copy-bank-account" style="margin-top:18px;width:100%">Copy account number</button>
+      <p id="bank-copy-status" role="status" aria-live="polite" style="color:#aab6ca;margin:10px 0 0;font-size:13px"></p>
+    </div>
+  </section>
   <section class="features wrap" id="account" style="padding-top:0">
     <h2 class="section-title">Customer account</h2>
     <p class="section-lead">Create an account or sign in to manage your ICHA AI Studio profile. Creating an account does not start AI generation or charge you.</p>
@@ -136,6 +150,11 @@ input,select,textarea{font:inherit;max-width:100%}
 <script>
 
 document.getElementById("year").textContent = new Date().getFullYear();
+document.getElementById("copy-bank-account").addEventListener("click",async()=>{
+  const status=document.getElementById("bank-copy-status");
+  try{await navigator.clipboard.writeText("8129183454");status.textContent="Account number copied."}
+  catch(_){status.textContent="Copy unavailable on this browser. Account number: 8129183454"}
+});
 const authForm=document.getElementById("auth-form");
 const authMessage=document.getElementById("auth-message");
 const authName=document.getElementById("auth-name");
