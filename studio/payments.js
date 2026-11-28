@@ -4,6 +4,7 @@ const PAYMENTS_TABLE_ID = "icha_wallet_transactions";
 const MIN_DEPOSIT_NGN = 5000;
 const MAX_DEPOSIT_NGN = 1000000;
 const CALLBACK_URL = "https://studio.tanphat.shop/payment/callback";
+let walletTableReady = false;
 
 function appwriteHeaders() {
   return {
@@ -31,6 +32,7 @@ async function ensurePaymentsTable() {
   if (!db || !process.env.APPWRITE_API_KEY) return false;
   try {
     await aw("/tablesdb/" + db + "/tables/" + PAYMENTS_TABLE_ID);
+    walletTableReady = true;
     return true;
   } catch (error) {
     if (error.status !== 404) {
@@ -62,6 +64,7 @@ async function ensurePaymentsTable() {
       })
     });
     console.log("ICHA wallet transactions table created.");
+    walletTableReady = true;
     return true;
   } catch (error) {
     console.error("Wallet table creation failed: HTTP " + (error.status || "network"));
@@ -176,8 +179,10 @@ function registerPaymentRoutes(app, requireAccount, appwriteBase) {
       minimumDepositNgn: MIN_DEPOSIT_NGN,
       maximumDepositNgn: MAX_DEPOSIT_NGN,
       currency: "NGN",
-      paymentsEnabled: false,
-      note: "Payments stay disabled until the wallet table is ready and test-mode checkout has been verified."
+      paymentsEnabled: walletTableReady && paystackConfigured(),
+      walletTableReady,
+      mode: "test",
+      note: "Paystack test mode only. Complete a small test checkout before switching to live credentials."
     });
   });
 
@@ -195,6 +200,7 @@ function registerPaymentRoutes(app, requireAccount, appwriteBase) {
   app.post("/api/payments/initialize", async (req, res) => {
     const current = await requireAccount(req).catch(() => null);
     if (!current) return res.status(401).json({ error: "Please sign in before funding your wallet." });
+    if (!walletTableReady) return res.status(503).json({ error: "Wallet database is not ready yet." });
     if (!paystackConfigured()) return res.status(503).json({ error: "Paystack test secret key is not configured." });
     const amount = Number(req.body && req.body.amountNgn);
     if (!Number.isSafeInteger(amount) || amount < MIN_DEPOSIT_NGN || amount > MAX_DEPOSIT_NGN) {
