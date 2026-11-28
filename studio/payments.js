@@ -5,6 +5,7 @@ const MIN_DEPOSIT_NGN = 5000;
 const MAX_DEPOSIT_NGN = 1000000;
 const CALLBACK_URL = "https://studio.tanphat.shop/payment/callback";
 let walletTableReady = false;
+let appwriteBaseFn = null;
 
 function appwriteHeaders() {
   return {
@@ -14,7 +15,7 @@ function appwriteHeaders() {
   };
 }
 async function aw(pathname, options = {}) {
-  const response = await fetch(appwriteBase() + pathname, {
+  const response = await fetch(appwriteBaseFn() + pathname, {
     ...options,
     headers: { ...appwriteHeaders(), ...(options.headers || {}) },
     signal: AbortSignal.timeout(15000)
@@ -173,6 +174,7 @@ async function creditVerifiedPayment(reference, expectedUserId) {
 }
 
 function registerPaymentRoutes(app, requireAccount, appwriteBase) {
+  appwriteBaseFn = appwriteBase;
   app.get("/api/payments/status", (_req, res) => {
     res.json({
       configured: paystackConfigured(),
