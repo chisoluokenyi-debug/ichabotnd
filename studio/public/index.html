@@ -162,6 +162,14 @@ input,select,textarea{font:inherit;max-width:100%}
         </div>
       </form>
       <div id="account-details" hidden style="margin-top:18px;padding:14px;border:1px solid #54e3d044;border-radius:10px"></div>
+      <div id="wallet-panel" hidden style="margin-top:18px;padding:16px;border:1px solid #54e3d044;border-radius:12px">
+        <h3 style="margin:0 0 8px">My wallet</h3>
+        <p id="wallet-balance" style="font-size:22px;font-weight:800;margin:0 0 14px">Balance: checking…</p>
+        <label for="wallet-amount">Deposit amount (minimum ₦5,000)</label>
+        <input id="wallet-amount" type="number" min="5000" max="1000000" step="100" value="5000" style="display:block;width:100%;margin:6px 0 12px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
+        <button class="btn" type="button" id="wallet-fund">Fund wallet with Paystack</button>
+        <p id="wallet-message" role="status" aria-live="polite" style="color:#aab6ca;margin:10px 0 0;font-size:13px">Test-mode checkout only. Video generation is not active.</p>
+      </div>
     </div>
   </section>
   <section class="features wrap" id="how" style="padding-top:0">
@@ -187,6 +195,30 @@ document.getElementById("login-btn").addEventListener("click",async()=>{try{awai
 logoutBtn.addEventListener("click",async()=>{try{await authRequest("/api/auth/logout",{});authForm.reset();authNotice("You have signed out.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
 refreshAccount();
 
+async function refreshWallet(){
+ const panel=document.getElementById("wallet-panel");
+ if(panel.hidden)return;
+ try{const r=await fetch("/api/wallet",{credentials:"same-origin"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Wallet unavailable");document.getElementById("wallet-balance").textContent="Balance: ₦"+Number(d.balanceNgn||0).toLocaleString("en-NG");}
+ catch(e){document.getElementById("wallet-balance").textContent=e.message;}
+}
+const originalRefreshAccount=refreshAccount;
+refreshAccount=async function(){await originalRefreshAccount();const signedIn=!accountDetails.hidden;document.getElementById("wallet-panel").hidden=!signedIn;if(signedIn)await refreshWallet();};
+document.getElementById("wallet-fund").addEventListener("click",async()=>{
+ const msg=document.getElementById("wallet-message"), amount=Number(document.getElementById("wallet-amount").value);
+ if(!Number.isSafeInteger(amount)||amount<5000||amount>1000000){msg.textContent="Enter an amount from ₦5,000 to ₦1,000,000.";return;}
+ msg.textContent="Starting secure Paystack test checkout…";
+ try{const r=await fetch("/api/payments/initialize",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({amountNgn:amount})});const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not start checkout.");window.location.assign(d.authorizationUrl);}
+ catch(e){msg.textContent=e.message;}
+});
+(async function handlePaymentCallback(){
+ if(window.location.pathname!=="/payment/callback")return;
+ const params=new URLSearchParams(window.location.search), reference=params.get("reference");
+ const msg=document.getElementById("wallet-message");
+ if(!reference){authNotice("Payment reference was not provided.",true);return;}
+ msg.textContent="Verifying your Paystack payment securely…";
+ try{const r=await fetch("/api/payments/verify?reference="+encodeURIComponent(reference),{credentials:"same-origin"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Payment is not confirmed.");msg.textContent=d.message;await refreshWallet();window.history.replaceState({},"","/");}
+ catch(e){msg.textContent=e.message;}
+})();
 fetch("/api/status").then(r=>r.json()).then(s=>{
  const el=document.getElementById("setup-status");
  if(s.videoProviderConfigured && s.voiceProviderConfigured){el.textContent="Video and voice provider connections are detected. Generation is intentionally disabled until usage metering and the shared monthly spending cap are enforced.";el.style.color="#e9ca8d";el.style.borderColor="#e6b75a55"}
