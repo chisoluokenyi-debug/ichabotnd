@@ -274,6 +274,9 @@ app.post("/api/auth/register", async (req, res) => {
     }
     const session = login.body.secret;
     res.cookie(SESSION_COOKIE, session, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 14 * 24 * 60 * 60 * 1000 });
+    // Record this browser against the account without slowing registration.
+    setImmediate(() => recordTrialDevice(created.body.$id, req.ichaDeviceToken)
+      .catch(() => console.warn("Trial device check could not be recorded during registration.")));
     // Profile provisioning is non-blocking so it cannot delay first sign-in.
     setImmediate(() => ensureCustomerProfile({ $id: created.body.$id, name, email })
       .catch(profileError => console.error("Customer profile provisioning deferred: " + String(profileError.message || "unknown").slice(0, 120))));
@@ -295,6 +298,9 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ error: "Email or password is incorrect." });
     }
     res.cookie(SESSION_COOKIE, result.body.secret, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 14 * 24 * 60 * 60 * 1000 });
+    // Record this browser against the account without slowing sign-in.
+    setImmediate(() => recordTrialDevice(result.body.userId, req.ichaDeviceToken)
+      .catch(() => console.warn("Trial device check could not be recorded during sign-in.")));
     // Repair the customer profile after the sign-in response, not in the critical path.
     setImmediate(() => ensureCustomerProfile({ $id: result.body.userId, name: result.body.userName || "Customer", email: result.body.userEmail || email })
       .catch(profileError => console.error("Customer profile repair deferred: " + String(profileError.message || "unknown").slice(0, 120))));
