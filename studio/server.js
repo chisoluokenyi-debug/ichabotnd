@@ -10,7 +10,7 @@ const FREE_VIDEO_POLICY = "lifetime";
 const MONTHLY_AI_BUDGET_NGN = 4000;
 app.disable("x-powered-by");
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "1mb", verify(req, _res, buffer) { if (req.originalUrl.startsWith("/api/paystack/webhook")) req.rawBody = Buffer.from(buffer); } }));
 app.use(express.static(path.join(__dirname, "public")));
 
 
@@ -123,6 +123,8 @@ async function requireAccount(req) {
   const result = await accountRequest("/account", { method: "GET" }, session);
   return result.response.ok ? { account: result.body, session } : null;
 }
+
+const ensureWalletTable = require("./payments").registerPaymentRoutes(app, requireAccount, appwriteBase);
 app.post("/api/auth/register", async (req, res) => {
   const name = String(req.body?.name || "").trim().slice(0, 128);
   const email = String(req.body?.email || "").trim().toLowerCase();
@@ -311,6 +313,7 @@ app.get("*", (_req, res) => {
 });
 
 ensureCustomerProfileTable();
+ensureWalletTable();
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log("ICHA AI Studio listening on port " + PORT);
