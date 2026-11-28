@@ -263,7 +263,7 @@ app.post("/api/auth/register", async (req, res) => {
       if (retryAfter) res.set("Retry-After", retryAfter);
       return res.status(status).json({ error });
     }
-    const login = await accountRequest("/account/sessions", { method: "POST", body: JSON.stringify({ email, password }) });
+    const login = await accountRequest("/account/sessions/email", { method: "POST", body: JSON.stringify({ email, password }) });
     if (!login.response.ok || !login.body.secret) {
       if (login.response.status === 429) {
         const retryAfter = login.response.headers.get("retry-after");
@@ -288,7 +288,7 @@ app.post("/api/auth/login", async (req, res) => {
   const password = String(req.body?.password || "");
   if (!email || !password) return res.status(400).json({ error: "Enter your email and password." });
   try {
-    const result = await accountRequest("/account/sessions", { method: "POST", body: JSON.stringify({ email, password }) });
+    const result = await accountRequest("/account/sessions/email", { method: "POST", body: JSON.stringify({ email, password }) });
     if (!result.response.ok || !result.body.secret) {
       if (result.response.status === 429) {
         const retryAfter = result.response.headers.get("retry-after");
