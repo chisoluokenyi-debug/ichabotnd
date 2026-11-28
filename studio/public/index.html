@@ -254,5 +254,6 @@ fetch("/api/status").then(r=>r.json()).then(s=>{
  else {el.textContent="Studio preview is online. One or more AI providers still need to be connected before generation can be enabled."}
 }).catch(()=>{document.getElementById("setup-status").textContent="Studio preview is online."});
 </script>
+<script src="/language.js" defer></script>
 </body>
 </html>
