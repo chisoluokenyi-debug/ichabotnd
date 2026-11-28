@@ -500,6 +500,10 @@ app.get("/api/provider-check", async (_req, res) => {
   });
 });
 
+app.get("/reset-password.html", (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "reset-password.html"));
+});
+
 app.get("*", (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
