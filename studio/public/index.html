@@ -112,7 +112,22 @@ input,select,textarea{font:inherit;max-width:100%}
   h1{font-size:34px}
 }
 
-[hidden]{display:none!important}
+
+/* Signed-in customer dashboard navigation */
+#customer-dashboard{margin-top:18px}
+.dashboard-menu{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0;padding:10px;border:1px solid #ffffff20;border-radius:13px;background:#0b1220}
+.dashboard-menu button{border:1px solid #ffffff20;background:#ffffff08;color:#dce5f4;border-radius:9px;padding:10px 13px;min-height:44px;cursor:pointer;font-weight:650}
+.dashboard-menu button[aria-current="page"]{background:#54e3d01c;border-color:#54e3d088;color:#72e8d7}
+.dashboard-panel{padding:16px;border:1px solid #ffffff1c;border-radius:12px;background:#0b1220}
+.dashboard-panel h3{margin:0 0 8px}
+.dashboard-panel p{color:#aab6ca;margin:6px 0}
+.dashboard-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.dashboard-card{padding:14px;border:1px solid #ffffff18;border-radius:10px;background:#ffffff06;min-width:0}
+.dashboard-card strong{display:block;margin-bottom:5px}
+.dashboard-card small{color:#aab6ca}
+.dashboard-coming{display:inline-block;margin-top:10px;padding:5px 9px;border-radius:99px;background:#e6b75a14;color:#e9ca8d;font-size:12px}
+@media(max-width:600px){.dashboard-menu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-menu button{width:100%;font-size:13px}.dashboard-cards{grid-template-columns:1fr}}
+\n[hidden]{display:none!important}
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://studio.tanphat.shop/#organization","name":"ICHA GLOBAL LIMITED","url":"https://studio.tanphat.shop/"},{"@type":"WebSite","@id":"https://studio.tanphat.shop/#website","url":"https://studio.tanphat.shop/","name":"ICHA AI Studio","publisher":{"@id":"https://studio.tanphat.shop/#organization"},"inLanguage":"en"}]}</script>
 </head>
@@ -146,6 +161,41 @@ input,select,textarea{font:inherit;max-width:100%}
         </div>
       </form>
       <div id="account-details" hidden style="margin-top:18px;padding:14px;border:1px solid #54e3d044;border-radius:10px"></div>
+      <div id="customer-dashboard" hidden>
+        <nav class="dashboard-menu" aria-label="Your dashboard menu">
+          <button type="button" data-dashboard-tab="overview" aria-current="page">⌂ Dashboard</button>
+          <button type="button" data-dashboard-tab="video">▣ Create video</button>
+          <button type="button" data-dashboard-tab="voice">♫ Voice studio</button>
+          <button type="button" data-dashboard-tab="projects">▤ My projects</button>
+          <button type="button" data-dashboard-tab="wallet">₦ Wallet</button>
+          <button type="button" data-dashboard-tab="profile">♙ My account</button>
+        </nav>
+        <section class="dashboard-panel" data-dashboard-panel="overview">
+          <h3>Welcome to your dashboard</h3>
+          <p>Manage your ICHA AI Studio account from this menu.</p>
+          <div class="dashboard-cards">
+            <div class="dashboard-card"><strong>AI video</strong><small>Create videos from your ideas.</small><span class="dashboard-coming">Coming soon</span></div>
+            <div class="dashboard-card"><strong>Voice studio</strong><small>Voice tools with speaker permission.</small><span class="dashboard-coming">Coming soon</span></div>
+            <div class="dashboard-card"><strong>My projects</strong><small>Your generated work will appear here when generation launches.</small><span class="dashboard-coming">Not active yet</span></div>
+            <div class="dashboard-card"><strong>Wallet</strong><small>Check your balance and manage deposits.</small><span class="dashboard-coming">Open Wallet menu</span></div>
+          </div>
+        </section>
+        <section class="dashboard-panel" data-dashboard-panel="video" hidden>
+          <h3>Create video</h3><p>Video generation is not enabled yet. Your account and wallet remain available.</p><span class="dashboard-coming">Coming soon — no charge will be made</span>
+        </section>
+        <section class="dashboard-panel" data-dashboard-panel="voice" hidden>
+          <h3>Voice studio</h3><p>Voice generation and voice cloning are not enabled yet. Voice cloning will require the speaker’s consent.</p><span class="dashboard-coming">Coming soon</span>
+        </section>
+        <section class="dashboard-panel" data-dashboard-panel="projects" hidden>
+          <h3>My projects</h3><p>Your video and voice generation history will appear here after those tools are launched.</p><span class="dashboard-coming">No projects yet</span>
+        </section>
+        <section class="dashboard-panel" data-dashboard-panel="wallet" hidden>
+          <h3>My wallet</h3><p>Your wallet balance and deposit controls are shown below.</p>
+        </section>
+        <section class="dashboard-panel" data-dashboard-panel="profile" hidden>
+          <h3>My account</h3><p id="dashboard-profile-details">Your signed-in account details.</p>
+        </section>
+      </div>
       <div id="wallet-panel" hidden style="margin-top:18px;padding:16px;border:1px solid #54e3d044;border-radius:12px">
         <h3 style="margin:0 0 8px">My wallet</h3>
         <p id="wallet-balance" style="font-size:22px;font-weight:800;margin:0 0 14px">Balance: checking…</p>
@@ -232,7 +282,7 @@ document.getElementById("forgot-password-link").addEventListener("click",async e
 document.getElementById("show-login-btn").addEventListener("click",()=>setAuthMode("login"));
 document.getElementById("show-register-btn").addEventListener("click",()=>setAuthMode("register"));
 document.querySelectorAll('a[href="#account"]').forEach(link=>link.addEventListener("click",()=>setAuthMode(link.textContent.trim().toLowerCase()==="login"?"login":"register")));
-async function refreshAccount(){try{const response=await fetch("/api/auth/me",{credentials:"same-origin"});const data=await response.json();if(data.authenticated){accountDetails.hidden=false;accountDetails.textContent="Signed in as "+data.user.name+" ("+data.user.email+").";authName.hidden=true;authPassword.hidden=true;document.getElementById("auth-email").hidden=true;document.querySelector('label[for="auth-email"]').hidden=true;document.querySelector('label[for="auth-name"]').hidden=true;document.querySelector('label[for="auth-password"]').hidden=true;document.getElementById("register-btn").hidden=true;document.getElementById("login-btn").hidden=true;document.getElementById("show-login-btn").hidden=true;document.getElementById("show-register-btn").hidden=true;document.getElementById("forgot-password-link").style.display="none";logoutBtn.hidden=false;authNotice("You are signed in.");}else{accountDetails.hidden=true;document.getElementById("auth-email").hidden=false;document.querySelector('label[for="auth-email"]').hidden=false;authName.hidden=false;document.querySelector('label[for="auth-name"]').hidden=false;authPassword.hidden=false;document.querySelector('label[for="auth-password"]').hidden=false;logoutBtn.hidden=true;setAuthMode(authMode);}}catch(_){authNotice("Account service is temporarily unavailable.",true)}}
+async function refreshAccount(){try{const response=await fetch("/api/auth/me",{credentials:"same-origin"});const data=await response.json();if(data.authenticated){accountDetails.hidden=false;accountDetails.textContent="Signed in as "+data.user.name+" ("+data.user.email+").";document.getElementById("customer-dashboard").hidden=false;document.getElementById("dashboard-profile-details").textContent=data.user.name+" · "+data.user.email;authName.hidden=true;authPassword.hidden=true;document.getElementById("auth-email").hidden=true;document.querySelector('label[for="auth-email"]').hidden=true;document.querySelector('label[for="auth-name"]').hidden=true;document.querySelector('label[for="auth-password"]').hidden=true;document.getElementById("register-btn").hidden=true;document.getElementById("login-btn").hidden=true;document.getElementById("show-login-btn").hidden=true;document.getElementById("show-register-btn").hidden=true;document.getElementById("forgot-password-link").style.display="none";logoutBtn.hidden=false;authNotice("You are signed in.");}else{accountDetails.hidden=true;document.getElementById("customer-dashboard").hidden=true;document.getElementById("auth-email").hidden=false;document.querySelector('label[for="auth-email"]').hidden=false;authName.hidden=false;document.querySelector('label[for="auth-name"]').hidden=false;authPassword.hidden=false;document.querySelector('label[for="auth-password"]').hidden=false;logoutBtn.hidden=true;setAuthMode(authMode);}}catch(_){authNotice("Account service is temporarily unavailable.",true)}}
 let authSubmitting=false;
 authForm.addEventListener("submit",async event=>{
  event.preventDefault();
@@ -257,6 +307,13 @@ authForm.addEventListener("submit",async event=>{
  }
 });
 logoutBtn.addEventListener("click",async()=>{try{await authRequest("/api/auth/logout",{});authForm.reset();authNotice("You have signed out.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
+document.querySelectorAll("[data-dashboard-tab]").forEach(button=>button.addEventListener("click",()=>{
+ const tab=button.dataset.dashboardTab;
+ document.querySelectorAll("[data-dashboard-tab]").forEach(item=>item.setAttribute("aria-current",item===button?"page":"false"));
+ document.querySelectorAll("[data-dashboard-panel]").forEach(panel=>{panel.hidden=panel.dataset.dashboardPanel!==tab;});
+ if(tab==="wallet"){document.getElementById("wallet-panel").hidden=false;refreshWallet();}
+ else {document.getElementById("wallet-panel").hidden=false;}
+}));
 async function refreshWallet(){
  const panel=document.getElementById("wallet-panel");
  if(panel.hidden)return;
