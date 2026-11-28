@@ -263,7 +263,7 @@ app.post("/api/auth/register", async (req, res) => {
       if (retryAfter) res.set("Retry-After", retryAfter);
       return res.status(status).json({ error });
     }
-    const login = await accountRequest("/account/sessions/email", { method: "POST", body: JSON.stringify({ email, password }) });
+    const login = await accountRequest("/account/sessions/email", { method: "POST", headers: { "X-Appwrite-Key": process.env.APPWRITE_API_KEY }, body: JSON.stringify({ email, password }) });
     if (!login.response.ok || !login.body.secret) {
       console.error("Appwrite registration auto-session failed: HTTP " + login.response.status + ", type=" + String(login.body.type || "unknown").slice(0, 80) + ", message=" + String(login.body.message || "No provider message").slice(0, 200));
       if (login.response.status === 429) {
@@ -289,7 +289,7 @@ app.post("/api/auth/login", async (req, res) => {
   const password = String(req.body?.password || "");
   if (!email || !password) return res.status(400).json({ error: "Enter your email and password." });
   try {
-    const result = await accountRequest("/account/sessions/email", { method: "POST", body: JSON.stringify({ email, password }) });
+    const result = await accountRequest("/account/sessions/email", { method: "POST", headers: { "X-Appwrite-Key": process.env.APPWRITE_API_KEY }, body: JSON.stringify({ email, password }) });
     if (!result.response.ok || !result.body.secret) {
       console.error("Appwrite sign-in failed: HTTP " + result.response.status + ", type=" + String(result.body.type || "unknown").slice(0, 80) + ", message=" + String(result.body.message || "No provider message").slice(0, 200));
       if (result.response.status === 429) {
