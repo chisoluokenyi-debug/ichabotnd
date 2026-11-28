@@ -137,6 +137,23 @@ async function creditVerifiedPayment(reference, expectedUserId) {
       body: JSON.stringify({
         operations: [
           {
+            // A unique receipt row in the same transaction prevents duplicate
+            // wallet credits when Paystack retries a webhook or callback.
+            action: "create",
+            databaseId: process.env.APPWRITE_DATABASE_ID,
+            tableId: PAYMENTS_TABLE_ID,
+            rowId: "credit_" + reference,
+            data: {
+              user_id: payment.user_id,
+              amount_kobo: expectedKobo,
+              currency: "NGN",
+              status: "credited",
+              channel: String(verified.channel || "unknown").slice(0, 32),
+              created_at: new Date().toISOString(),
+              paid_at: new Date().toISOString()
+            }
+          },
+          {
             action: "increment",
             databaseId: process.env.APPWRITE_DATABASE_ID,
             tableId: "icha_customer_profiles",
