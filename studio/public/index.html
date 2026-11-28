@@ -118,6 +118,8 @@ input,select,textarea{font:inherit;max-width:100%}
 .dashboard-menu{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0;padding:10px;border:1px solid #ffffff20;border-radius:13px;background:#0b1220}
 .dashboard-menu button{border:1px solid #ffffff20;background:#ffffff08;color:#dce5f4;border-radius:9px;padding:10px 13px;min-height:44px;cursor:pointer;font-weight:650}
 .dashboard-menu button[aria-current="page"]{background:#54e3d01c;border-color:#54e3d088;color:#72e8d7}
+.dashboard-menu .dashboard-logout{grid-column:1/-1;margin-top:8px;border-color:#ff8b8b55;color:#ffaaaa;background:#ff777710}
+.dashboard-menu .dashboard-logout:hover{background:#ff777720}
 .dashboard-panel{padding:16px;border:1px solid #ffffff1c;border-radius:12px;background:#0b1220}
 .dashboard-panel h3{margin:0 0 8px}
 .dashboard-panel p{color:#aab6ca;margin:6px 0}
@@ -164,11 +166,14 @@ input,select,textarea{font:inherit;max-width:100%}
       <div id="customer-dashboard" hidden>
         <nav class="dashboard-menu" aria-label="Your dashboard menu">
           <button type="button" data-dashboard-tab="overview" aria-current="page">⌂ Dashboard</button>
-          <button type="button" data-dashboard-tab="video">▣ Create video</button>
-          <button type="button" data-dashboard-tab="voice">♫ Voice studio</button>
-          <button type="button" data-dashboard-tab="projects">▤ My projects</button>
+          <button type="button" data-dashboard-tab="video">▣ AI Video / Text to Video</button>
+          <button type="button" data-dashboard-tab="voice">♫ Voice Studio</button>
+          <button type="button" data-dashboard-tab="content">✎ AI Content</button>
+          <button type="button" data-dashboard-tab="languages">文 Multilingual Tools</button>
+          <button type="button" data-dashboard-tab="projects">▤ My Projects</button>
           <button type="button" data-dashboard-tab="wallet">₦ Wallet</button>
-          <button type="button" data-dashboard-tab="profile">♙ My account</button>
+          <button type="button" data-dashboard-tab="profile">♙ My Account</button>
+          <button type="button" id="dashboard-logout" class="dashboard-logout">↪ Sign Out</button>
         </nav>
         <section class="dashboard-panel" data-dashboard-panel="overview">
           <h3>Welcome to your dashboard</h3>
@@ -185,6 +190,12 @@ input,select,textarea{font:inherit;max-width:100%}
         </section>
         <section class="dashboard-panel" data-dashboard-panel="voice" hidden>
           <h3>Voice studio</h3><p>Voice generation and voice cloning are not enabled yet. Voice cloning will require the speaker’s consent.</p><span class="dashboard-coming">Coming soon</span>
+        </section>
+        <section class="dashboard-panel" data-dashboard-panel="content" hidden>
+          <h3>AI Content</h3><p>AI content creation tools are planned for captions, scripts and creator content.</p><span class="dashboard-coming">Coming soon</span>
+        </section>
+        <section class="dashboard-panel" data-dashboard-panel="languages" hidden>
+          <h3>Multilingual Tools</h3><p>Tools for creating and adapting content for audiences in different languages are planned.</p><span class="dashboard-coming">Coming soon</span>
         </section>
         <section class="dashboard-panel" data-dashboard-panel="projects" hidden>
           <h3>My projects</h3><p>Your video and voice generation history will appear here after those tools are launched.</p><span class="dashboard-coming">No projects yet</span>
@@ -306,13 +317,17 @@ authForm.addEventListener("submit",async event=>{
   submitButtons.forEach(button=>{button.disabled=false;button.textContent=button.dataset.previousText|| (button.id==="login-btn"?"Sign in":"Create account");});
  }
 });
-logoutBtn.addEventListener("click",async()=>{try{await authRequest("/api/auth/logout",{});authForm.reset();authNotice("You have signed out.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
+async function performLogout(){try{await authRequest("/api/auth/logout",{});authForm.reset();authNotice("You have signed out.");await refreshAccount()}catch(error){authNotice(error.message,true)}}
+logoutBtn.addEventListener("click",performLogout);
+document.getElementById("dashboard-logout").addEventListener("click",performLogout);
 document.querySelectorAll("[data-dashboard-tab]").forEach(button=>button.addEventListener("click",()=>{
  const tab=button.dataset.dashboardTab;
  document.querySelectorAll("[data-dashboard-tab]").forEach(item=>item.setAttribute("aria-current",item===button?"page":"false"));
  document.querySelectorAll("[data-dashboard-panel]").forEach(panel=>{panel.hidden=panel.dataset.dashboardPanel!==tab;});
- if(tab==="wallet"){document.getElementById("wallet-panel").hidden=false;refreshWallet();}
- else {document.getElementById("wallet-panel").hidden=false;}
+ const walletPanel=document.getElementById("wallet-panel");
+ const walletSection=document.querySelector('[data-dashboard-panel="wallet"]');
+ if(tab==="wallet"){walletSection.appendChild(walletPanel);walletPanel.hidden=false;refreshWallet();}
+ else {walletPanel.hidden=true;}
 }));
 async function refreshWallet(){
  const panel=document.getElementById("wallet-panel");
