@@ -15,7 +15,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 // First-party random device token: no canvas, browser fingerprint, or phone number.
 app.use((req, res, next) => {
   const cookies = req.headers.cookie || "";
-  const match = cookies.match(/(?:^|;\\s*)icha_device=([^;]+)/);
+  const match = cookies.match(/(?:^|;\s*)icha_device=([^;]+)/);
   let token = match ? decodeURIComponent(match[1]) : "";
   if (!/^[a-f0-9]{64}$/.test(token)) {
     token = crypto.randomBytes(32).toString("hex");
