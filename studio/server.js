@@ -5,7 +5,7 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 // Launch offer and conservative application-side spend ceiling.
-const FREE_VIDEO_LIMIT_PER_CUSTOMER = 5;
+const FREE_VIDEO_LIMIT_PER_CUSTOMER = 2;
 const FREE_VIDEO_POLICY = "lifetime";
 const MONTHLY_AI_BUDGET_NGN = 4000;
 app.disable("x-powered-by");
@@ -192,7 +192,7 @@ app.get("/api/status", (_req, res) => {
     monthlyAiBudgetNgn: MONTHLY_AI_BUDGET_NGN,
     monthlyAiBudgetEnforced: false,
     usageLedgerReady: false,
-    note: "Planned launch offer: five lifetime free videos per customer, subject to the overall monthly AI budget. The ₦4,000 budget is a target only and is not enforced yet. Generation is disabled until durable usage metering, atomic budget reservations, provider cost controls and failure handling are implemented and tested."
+    note: "Planned launch offer: two lifetime free videos per customer. Generation remains disabled until a specific video model and duration are selected and durable usage metering, atomic budget reservations, provider cost controls and failure handling are implemented and tested."
   });
 });
 
