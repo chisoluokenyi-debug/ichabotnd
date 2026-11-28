@@ -307,6 +307,36 @@ app.post("/api/auth/login", async (req, res) => {
     return res.json({ ok: true });
   } catch (_) { return res.status(502).json({ error: "Account service temporarily unavailable." }); }
 });
+app.post("/api/auth/forgot-password", async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: "Enter the email address linked to your account." });
+  try {
+    const result = await accountRequest("/account/recovery", { method: "POST", body: JSON.stringify({ email, url: "https://studio.tanphat.shop/reset-password.html" }) });
+    if (result.response.status === 429) {
+      const retryAfter = result.response.headers.get("retry-after");
+      if (retryAfter) res.set("Retry-After", retryAfter);
+      return res.status(429).json({ error: "Too many requests. Please wait a little and try again." });
+    }
+    if (!result.response.ok) {
+      console.error("Password recovery request failed with HTTP " + result.response.status);
+      return res.status(502).json({ error: "We could not send the reset email right now. Please try again later." });
+    }
+    return res.json({ ok: true, message: "If an account exists for that email, a password reset link has been sent. Check your inbox and spam folder." });
+  } catch (_) { return res.status(502).json({ error: "Password reset is temporarily unavailable. Please try again later." }); }
+});
+app.post("/api/auth/reset-password", async (req, res) => {
+  const userId = String(req.body?.userId || "").trim();
+  const secret = String(req.body?.secret || "").trim();
+  const password = String(req.body?.password || "");
+  const passwordAgain = String(req.body?.passwordAgain || "");
+  if (!userId || !secret || !password || !passwordAgain) return res.status(400).json({ error: "Open the reset link from your email and enter your new password twice." });
+  if (password !== passwordAgain) return res.status(400).json({ error: "The passwords do not match." });
+  try {
+    const result = await accountRequest("/account/recovery", { method: "PUT", body: JSON.stringify({ userId, secret, password, passwordAgain }) });
+    if (!result.response.ok) return res.status(result.response.status === 429 ? 429 : 400).json({ error: result.response.status === 429 ? "Too many attempts. Please wait a little and try again." : "This reset link is invalid or has expired. Request a new password reset link." });
+    return res.json({ ok: true, message: "Your password has been changed. You can now sign in with your new password." });
+  } catch (_) { return res.status(502).json({ error: "Password reset is temporarily unavailable. Please try again later." }); }
+});
 app.get("/api/trial/device-check", async (req, res) => {
   try {
     const current = await requireAccount(req);
