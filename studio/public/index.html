@@ -298,6 +298,13 @@ let authSubmitting=false;
 authForm.addEventListener("submit",async event=>{
  event.preventDefault();
  if(authSubmitting)return;
+ const emailInput=document.getElementById("auth-email");
+ const email=emailInput.value.trim();
+ if(authMode!=="login"&&!authName.value.trim()){authNotice("Please enter your name.",true);authName.focus();return;}
+ if(!email||!emailInput.validity.valid){authNotice("Please enter a valid email address.",true);emailInput.focus();return;}
+ if(!authPassword.value){authNotice("Please enter your password.",true);authPassword.focus();return;}
+ if(authMode!=="login")authName.value=authName.value.trim();
+ emailInput.value=email;
  authSubmitting=true;
  const submitButtons=[document.getElementById("register-btn"),document.getElementById("login-btn")];
  submitButtons.forEach(button=>{button.disabled=true;button.dataset.previousText=button.textContent;button.textContent="Please wait…";});
