@@ -1,6 +1,7 @@
 const express = require("express");
 const helmet = require("helmet");
 const path = require("path");
+const crypto = require("crypto");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -11,6 +12,18 @@ const FREE_VIDEO_POLICY = "lifetime";
 const MONTHLY_AI_BUDGET_NGN = 4000;
 app.disable("x-powered-by");
 app.use(helmet({ contentSecurityPolicy: false }));
+// First-party random device token: no canvas, browser fingerprint, or phone number.
+app.use((req, res, next) => {
+  const cookies = req.headers.cookie || "";
+  const match = cookies.match(/(?:^|;\\s*)icha_device=([^;]+)/);
+  let token = match ? decodeURIComponent(match[1]) : "";
+  if (!/^[a-f0-9]{64}$/.test(token)) {
+    token = crypto.randomBytes(32).toString("hex");
+    res.cookie("icha_device", token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 365 * 24 * 60 * 60 * 1000 });
+  }
+  req.ichaDeviceToken = token;
+  next();
+});
 app.use(express.json({ limit: "1mb", verify(req, _res, buffer) { if (req.originalUrl.startsWith("/api/paystack/webhook")) req.rawBody = Buffer.from(buffer); } }));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -97,6 +110,7 @@ async function ensureCustomerProfileTable() {
 
 const PROFILE_TABLE_ID = "icha_customer_profiles";
 const SESSION_COOKIE = "icha_session";
+const DEVICE_TABLE_ID = "icha_trial_devices";
 function appwriteBase() {
   let value = (process.env.APPWRITE_ENDPOINT || "").trim();
   while (value.endsWith("/")) value = value.slice(0, -1);
@@ -123,6 +137,73 @@ async function requireAccount(req) {
   if (!session) return null;
   const result = await accountRequest("/account", { method: "GET" }, session);
   return result.response.ok ? { account: result.body, session } : null;
+}
+
+async function ensureTrialDeviceTable() {
+  const required = ["APPWRITE_DATABASE_ID", "APPWRITE_API_KEY", "APPWRITE_PROJECT_ID"];
+  if (required.some((name) => !process.env[name])) return false;
+  const db = encodeURIComponent(process.env.APPWRITE_DATABASE_ID);
+  const headers = { "X-Appwrite-Project": process.env.APPWRITE_PROJECT_ID, "X-Appwrite-Key": process.env.APPWRITE_API_KEY, "Content-Type": "application/json" };
+  const base = appwriteBase() + "/tablesdb/" + db + "/tables/" + DEVICE_TABLE_ID;
+  try {
+    const existing = await fetch(base, { headers, signal: AbortSignal.timeout(10000) });
+    if (existing.ok) return true;
+    if (existing.status !== 404) return false;
+    const created = await fetch(appwriteBase() + "/tablesdb/" + db + "/tables", {
+      method: "POST", headers, signal: AbortSignal.timeout(15000),
+      body: JSON.stringify({
+        tableId: DEVICE_TABLE_ID, name: "ICHA Free Trial Device Checks", permissions: [], rowSecurity: false, enabled: true,
+        columns: [
+          { key: "device_hash", type: "string", size: 64, required: true },
+          { key: "first_user_id", type: "string", size: 36, required: true },
+          { key: "account_count", type: "integer", required: true, default: 1 },
+          { key: "first_seen", type: "datetime", required: true },
+          { key: "last_seen", type: "datetime", required: true },
+          { key: "reused", type: "boolean", required: true, default: false }
+        ],
+        indexes: [{ key: "unique_device_hash", type: "unique", attributes: ["device_hash"] }]
+      })
+    });
+    return created.ok || created.status === 409;
+  } catch (error) {
+    console.error("Trial device table setup failed: " + (error && error.name === "TimeoutError" ? "timeout" : "network error"));
+    return false;
+  }
+}
+let trialDeviceTableReady = false;
+async function recordTrialDevice(userId, deviceToken) {
+  if (!trialDeviceTableReady) throw new Error("Trial device checks are not ready.");
+  const hash = crypto.createHash("sha256").update(deviceToken).digest("hex");
+  const db = encodeURIComponent(process.env.APPWRITE_DATABASE_ID);
+  const base = appwriteBase() + "/tablesdb/" + db + "/tables/" + DEVICE_TABLE_ID + "/rows";
+  const headers = { "X-Appwrite-Project": process.env.APPWRITE_PROJECT_ID, "X-Appwrite-Key": process.env.APPWRITE_API_KEY, "Content-Type": "application/json" };
+  const rowId = "d_" + hash.slice(0, 34);
+  const now = new Date().toISOString();
+  const lookup = await fetch(base + "/" + encodeURIComponent(rowId), { headers, signal: AbortSignal.timeout(10000) });
+  if (lookup.ok) {
+    const row = await lookup.json();
+    const reused = row.first_user_id !== userId;
+    if (reused) {
+      await fetch(base + "/" + encodeURIComponent(rowId), {
+        method: "PATCH", headers, signal: AbortSignal.timeout(10000),
+        body: JSON.stringify({ data: { account_count: Number(row.account_count || 1) + 1, last_seen: now, reused: true } })
+      });
+    } else {
+      await fetch(base + "/" + encodeURIComponent(rowId), {
+        method: "PATCH", headers, signal: AbortSignal.timeout(10000),
+        body: JSON.stringify({ data: { last_seen: now } })
+      });
+    }
+    return { previouslySeen: true, reusedByAnotherAccount: reused, accountCount: Number(row.account_count || 1) + (reused ? 1 : 0) };
+  }
+  if (lookup.status !== 404) throw new Error("Trial device lookup failed.");
+  const created = await fetch(base, {
+    method: "POST", headers, signal: AbortSignal.timeout(10000),
+    body: JSON.stringify({ rowId, data: { device_hash: hash, first_user_id: userId, account_count: 1, first_seen: now, last_seen: now, reused: false }, permissions: [] })
+  });
+  if (created.ok) return { previouslySeen: false, reusedByAnotherAccount: false, accountCount: 1 };
+  if (created.status === 409) return recordTrialDevice(userId, deviceToken);
+  throw new Error("Trial device record could not be saved.");
 }
 
 async function ensureCustomerProfile(account) {
@@ -220,6 +301,24 @@ app.post("/api/auth/login", async (req, res) => {
     return res.json({ ok: true });
   } catch (_) { return res.status(502).json({ error: "Account service temporarily unavailable." }); }
 });
+app.get("/api/trial/device-check", async (req, res) => {
+  try {
+    const current = await requireAccount(req);
+    if (!current) return res.status(401).json({ error: "Please sign in." });
+    const device = await recordTrialDevice(current.account.$id, req.ichaDeviceToken);
+    return res.json({
+      checked: true,
+      sameDevicePreviouslyUsed: device.previouslySeen,
+      usedByAnotherAccount: device.reusedByAnotherAccount,
+      accountCountOnDevice: device.accountCount,
+      freeTrialDecision: "pending_generation_integration",
+      message: "This is a device-risk signal only. It does not by itself prove a person's identity."
+    });
+  } catch (_) {
+    return res.status(503).json({ error: "Free-trial protection is temporarily unavailable." });
+  }
+});
+
 app.get("/api/auth/me", async (req, res) => {
   try {
     const current = await requireAccount(req);
@@ -371,6 +470,7 @@ app.get("*", (_req, res) => {
 
 ensureCustomerProfileTable();
 ensureWalletTable();
+ensureTrialDeviceTable().then((ready) => { trialDeviceTableReady = ready; if (ready) console.log("ICHA trial device checks ready."); });
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log("ICHA AI Studio listening on port " + PORT);
