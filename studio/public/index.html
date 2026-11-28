@@ -134,8 +134,8 @@ input,select,textarea{font:inherit;max-width:100%}
         <input id="auth-name" name="name" autocomplete="name" maxlength="128" placeholder="Your full name" required style="display:block;width:100%;margin:6px 0 14px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
         <label for="auth-email">Email address</label>
         <input id="auth-email" name="email" type="email" autocomplete="email" required placeholder="you@example.com" style="display:block;width:100%;margin:6px 0 14px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
-        <label for="auth-password">Password (at least 12 characters)</label>
-        <input id="auth-password" name="password" type="password" autocomplete="new-password" minlength="12" required placeholder="At least 12 characters" style="display:block;width:100%;margin:6px 0 16px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
+        <label for="auth-password">Password (at least 8 characters)</label>
+        <input id="auth-password" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 12 characters" style="display:block;width:100%;margin:6px 0 16px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
         <div class="actions" style="justify-content:flex-start;margin-top:0">
           <button class="btn" type="submit" id="register-btn">Create account</button>
           <button class="btn" type="submit" id="login-btn" hidden>Sign in</button>
@@ -209,9 +209,9 @@ function setAuthMode(mode){
  document.getElementById("auth-description").textContent=login?"Enter your email address and password to access your account.":"Register to manage your ICHA AI Studio profile. Creating an account does not start AI generation or charge you.";
  authName.hidden=login;authName.disabled=login;authName.required=!login;
  document.getElementById("auth-name-label").hidden=login;
- document.querySelector('label[for="auth-password"]').textContent=login?"Password":"Password (at least 12 characters)";
- authPassword.autocomplete=login?"current-password":"new-password";authPassword.minLength=login?0:12;
- authPassword.placeholder=login?"Enter your password":"At least 12 characters";
+ document.querySelector('label[for="auth-password"]').textContent=login?"Password":"Password (at least 8 characters)";
+ authPassword.autocomplete=login?"current-password":"new-password";authPassword.minLength=login?0:8;
+ authPassword.placeholder=login?"Enter your password":"At least 8 characters";
  document.getElementById("register-btn").hidden=login;
  document.getElementById("login-btn").hidden=!login;
  document.getElementById("show-login-btn").hidden=login;
