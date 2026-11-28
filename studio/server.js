@@ -132,6 +132,29 @@ async function accountRequest(pathname, options = {}, session = "") {
   try { body = await response.json(); } catch (_) {}
   return { response, body };
 }
+
+function appwriteSessionSecret(response, body) {
+  if (typeof body?.secret === "string" && body.secret) return body.secret;
+  const projectId = String(process.env.APPWRITE_PROJECT_ID || "");
+  if (!projectId || !response?.headers) return "";
+  const expectedNames = new Set(["a_session_" + projectId, "a_session_" + projectId + "_legacy"]);
+  let cookies = [];
+  if (typeof response.headers.getSetCookie === "function") {
+    cookies = response.headers.getSetCookie();
+  } else {
+    const combined = response.headers.get("set-cookie") || "";
+    cookies = combined.match(/(?:^|,\\s*)a_session_[^=;,]+=[^;,]*/g) || [];
+  }
+  for (const cookie of cookies) {
+    const pair = String(cookie).split(";", 1)[0];
+    const separator = pair.indexOf("=");
+    if (separator < 1) continue;
+    const name = pair.slice(0, separator).trim();
+    const value = pair.slice(separator + 1).trim();
+    if (expectedNames.has(name) && value) return value;
+  }
+  return "";
+}
 async function requireAccount(req) {
   const session = sessionFrom(req);
   if (!session) return null;
@@ -253,7 +276,7 @@ app.post("/api/auth/register", async (req, res) => {
     return res.status(400).json({ error: "Enter your name, a valid email address, and a password." });
   }
   try {
-    const created = await accountRequest("/account", { method: "POST", body: JSON.stringify({ userId: "unique()", name, email, password }) });
+    const created = await accountRequest("/account", { method: "POST", headers: { "X-Appwrite-Key": process.env.APPWRITE_API_KEY }, body: JSON.stringify({ userId: "unique()", name, email, password }) });
     if (!created.response.ok) {
       const status = created.response.status === 409 ? 409 : created.response.status === 429 ? 429 : 400;
       const error = created.response.status === 429
@@ -264,8 +287,9 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(status).json({ error });
     }
     const login = await accountRequest("/account/sessions/email", { method: "POST", headers: { "X-Appwrite-Key": process.env.APPWRITE_API_KEY }, body: JSON.stringify({ email, password }) });
-    if (!login.response.ok || !login.body.secret) {
-      console.error("Appwrite registration auto-session failed: HTTP " + login.response.status + ", type=" + String(login.body.type || "unknown").slice(0, 80) + ", message=" + String(login.body.message || "No provider message").slice(0, 200));
+    const session = appwriteSessionSecret(login.response, login.body);
+    if (!login.response.ok || !session) {
+      console.error("Appwrite registration auto-session failed: HTTP " + login.response.status + ", type=" + String(login.body.type || "unknown").slice(0, 80) + ", sessionCookiePresent=" + Boolean(session) + ", message=" + String(login.body.message || "No provider message").slice(0, 200));
       if (login.response.status === 429) {
         const retryAfter = login.response.headers.get("retry-after");
         if (retryAfter) res.set("Retry-After", retryAfter);
@@ -290,8 +314,9 @@ app.post("/api/auth/login", async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: "Enter your email and password." });
   try {
     const result = await accountRequest("/account/sessions/email", { method: "POST", headers: { "X-Appwrite-Key": process.env.APPWRITE_API_KEY }, body: JSON.stringify({ email, password }) });
-    if (!result.response.ok || !result.body.secret) {
-      console.error("Appwrite sign-in failed: HTTP " + result.response.status + ", type=" + String(result.body.type || "unknown").slice(0, 80) + ", message=" + String(result.body.message || "No provider message").slice(0, 200));
+    const session = appwriteSessionSecret(result.response, result.body);
+    if (!result.response.ok || !session) {
+      console.error("Appwrite sign-in failed: HTTP " + result.response.status + ", type=" + String(result.body.type || "unknown").slice(0, 80) + ", sessionCookiePresent=" + Boolean(session) + ", message=" + String(result.body.message || "No provider message").slice(0, 200));
       if (result.response.status === 429) {
         const retryAfter = result.response.headers.get("retry-after");
         if (retryAfter) res.set("Retry-After", retryAfter);
@@ -299,7 +324,7 @@ app.post("/api/auth/login", async (req, res) => {
       }
       return res.status(401).json({ error: "Email or password is incorrect." });
     }
-    res.cookie(SESSION_COOKIE, result.body.secret, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 14 * 24 * 60 * 60 * 1000 });
+    res.cookie(SESSION_COOKIE, session, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 14 * 24 * 60 * 60 * 1000 });
     // Record this browser against the account without slowing sign-in.
     setImmediate(() => recordTrialDevice(result.body.userId, req.ichaDeviceToken)
       .catch(() => console.warn("Trial device check could not be recorded during sign-in.")));
