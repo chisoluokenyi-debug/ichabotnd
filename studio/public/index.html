@@ -193,8 +193,6 @@ async function refreshAccount(){try{const response=await fetch("/api/auth/me",{c
 authForm.addEventListener("submit",async event=>{event.preventDefault();try{await authRequest("/api/auth/register",{name:authName.value,email:document.getElementById("auth-email").value,password:authPassword.value});authNotice("Account created successfully.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
 document.getElementById("login-btn").addEventListener("click",async()=>{try{await authRequest("/api/auth/login",{email:document.getElementById("auth-email").value,password:authPassword.value});authNotice("Signed in successfully.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
 logoutBtn.addEventListener("click",async()=>{try{await authRequest("/api/auth/logout",{});authForm.reset();authNotice("You have signed out.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
-refreshAccount();
-
 async function refreshWallet(){
  const panel=document.getElementById("wallet-panel");
  if(panel.hidden)return;
@@ -203,6 +201,7 @@ async function refreshWallet(){
 }
 const originalRefreshAccount=refreshAccount;
 refreshAccount=async function(){await originalRefreshAccount();const signedIn=!accountDetails.hidden;document.getElementById("wallet-panel").hidden=!signedIn;if(signedIn)await refreshWallet();};
+refreshAccount();
 document.getElementById("wallet-fund").addEventListener("click",async()=>{
  const msg=document.getElementById("wallet-message"), amount=Number(document.getElementById("wallet-amount").value);
  if(!Number.isSafeInteger(amount)||amount<5000||amount>1000000){msg.textContent="Enter an amount from ₦5,000 to ₦1,000,000.";return;}
