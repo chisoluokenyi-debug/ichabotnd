@@ -221,7 +221,29 @@ document.getElementById("show-login-btn").addEventListener("click",()=>setAuthMo
 document.getElementById("show-register-btn").addEventListener("click",()=>setAuthMode("register"));
 document.querySelectorAll('a[href="#account"]').forEach(link=>link.addEventListener("click",()=>setAuthMode(link.textContent.trim().toLowerCase()==="login"?"login":"register")));
 async function refreshAccount(){try{const response=await fetch("/api/auth/me",{credentials:"same-origin"});const data=await response.json();if(data.authenticated){accountDetails.hidden=false;accountDetails.textContent="Signed in as "+data.user.name+" ("+data.user.email+"). Your customer profile is ready.";authName.hidden=true;authPassword.hidden=true;document.querySelector('label[for="auth-name"]').hidden=true;document.querySelector('label[for="auth-password"]').hidden=true;document.getElementById("register-btn").hidden=true;document.getElementById("login-btn").hidden=true;document.getElementById("show-login-btn").hidden=true;document.getElementById("show-register-btn").hidden=true;logoutBtn.hidden=false;authNotice("You are signed in.");}else{accountDetails.hidden=true;authPassword.hidden=false;document.querySelector('label[for="auth-password"]').hidden=false;logoutBtn.hidden=true;setAuthMode(authMode);}}catch(_){authNotice("Account service is temporarily unavailable.",true)}}
-authForm.addEventListener("submit",async event=>{event.preventDefault();try{if(authMode==="login"){await authRequest("/api/auth/login",{email:document.getElementById("auth-email").value,password:authPassword.value});authNotice("Signed in successfully.");}else{await authRequest("/api/auth/register",{name:authName.value,email:document.getElementById("auth-email").value,password:authPassword.value});authNotice("Account created successfully.");}await refreshAccount()}catch(error){authNotice(error.message,true)}});
+let authSubmitting=false;
+authForm.addEventListener("submit",async event=>{
+ event.preventDefault();
+ if(authSubmitting)return;
+ authSubmitting=true;
+ const submitButtons=[document.getElementById("register-btn"),document.getElementById("login-btn")];
+ submitButtons.forEach(button=>{button.disabled=true;button.dataset.previousText=button.textContent;button.textContent="Please wait…";});
+ try{
+  if(authMode==="login"){
+   await authRequest("/api/auth/login",{email:document.getElementById("auth-email").value,password:authPassword.value});
+   authNotice("Signed in successfully.");
+  }else{
+   await authRequest("/api/auth/register",{name:authName.value,email:document.getElementById("auth-email").value,password:authPassword.value});
+   authNotice("Account created. Signing you in…");
+  }
+  await refreshAccount();
+ }catch(error){
+  authNotice(error.message,true);
+ }finally{
+  authSubmitting=false;
+  submitButtons.forEach(button=>{button.disabled=false;button.textContent=button.dataset.previousText|| (button.id==="login-btn"?"Sign in":"Create account");});
+ }
+});
 logoutBtn.addEventListener("click",async()=>{try{await authRequest("/api/auth/logout",{});authForm.reset();authNotice("You have signed out.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
 async function refreshWallet(){
  const panel=document.getElementById("wallet-panel");
