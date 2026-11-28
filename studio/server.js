@@ -173,16 +173,29 @@ app.post("/api/auth/register", async (req, res) => {
   }
   try {
     const created = await accountRequest("/account", { method: "POST", body: JSON.stringify({ userId: "unique()", name, email, password }) });
-    if (!created.response.ok) return res.status(created.response.status === 409 ? 409 : 400).json({ error: created.body.message || "Could not create account." });
-    const login = await accountRequest("/account/sessions", { method: "POST", body: JSON.stringify({ email, password }) });
-    if (!login.response.ok || !login.body.secret) return res.status(502).json({ error: "Account created. Please sign in." });
-    const session = login.body.secret;
-    try {
-      await ensureCustomerProfile({ $id: created.body.$id, name, email });
-    } catch (profileError) {
-      console.error("Customer profile provisioning deferred: " + String(profileError.message || "unknown").slice(0, 120));
+    if (!created.response.ok) {
+      const status = created.response.status === 409 ? 409 : created.response.status === 429 ? 429 : 400;
+      const error = created.response.status === 429
+        ? "Too many attempts right now. Please wait a little and try again."
+        : created.body.message || "Could not create account.";
+      const retryAfter = created.response.headers.get("retry-after");
+      if (retryAfter) res.set("Retry-After", retryAfter);
+      return res.status(status).json({ error });
     }
+    const login = await accountRequest("/account/sessions", { method: "POST", body: JSON.stringify({ email, password }) });
+    if (!login.response.ok || !login.body.secret) {
+      if (login.response.status === 429) {
+        const retryAfter = login.response.headers.get("retry-after");
+        if (retryAfter) res.set("Retry-After", retryAfter);
+        return res.status(429).json({ error: "Your account was created, but sign-in is temporarily busy. Please try signing in again shortly." });
+      }
+      return res.status(502).json({ error: "Your account was created. Please sign in to continue." });
+    }
+    const session = login.body.secret;
     res.cookie(SESSION_COOKIE, session, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 14 * 24 * 60 * 60 * 1000 });
+    // Profile provisioning is non-blocking so it cannot delay first sign-in.
+    setImmediate(() => ensureCustomerProfile({ $id: created.body.$id, name, email })
+      .catch(profileError => console.error("Customer profile provisioning deferred: " + String(profileError.message || "unknown").slice(0, 120))));
     return res.status(201).json({ ok: true, name });
   } catch (_) { return res.status(502).json({ error: "Account service temporarily unavailable." }); }
 });
@@ -192,13 +205,18 @@ app.post("/api/auth/login", async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: "Enter your email and password." });
   try {
     const result = await accountRequest("/account/sessions", { method: "POST", body: JSON.stringify({ email, password }) });
-    if (!result.response.ok || !result.body.secret) return res.status(401).json({ error: "Email or password is incorrect." });
-    try {
-      await ensureCustomerProfile({ $id: result.body.userId, name: result.body.userName || "Customer", email: result.body.userEmail || email });
-    } catch (profileError) {
-      console.error("Customer profile repair deferred: " + String(profileError.message || "unknown").slice(0, 120));
+    if (!result.response.ok || !result.body.secret) {
+      if (result.response.status === 429) {
+        const retryAfter = result.response.headers.get("retry-after");
+        if (retryAfter) res.set("Retry-After", retryAfter);
+        return res.status(429).json({ error: "Sign-in is temporarily busy. Please wait a little and try again." });
+      }
+      return res.status(401).json({ error: "Email or password is incorrect." });
     }
     res.cookie(SESSION_COOKIE, result.body.secret, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 14 * 24 * 60 * 60 * 1000 });
+    // Repair the customer profile after the sign-in response, not in the critical path.
+    setImmediate(() => ensureCustomerProfile({ $id: result.body.userId, name: result.body.userName || "Customer", email: result.body.userEmail || email })
+      .catch(profileError => console.error("Customer profile repair deferred: " + String(profileError.message || "unknown").slice(0, 120))));
     return res.json({ ok: true });
   } catch (_) { return res.status(502).json({ error: "Account service temporarily unavailable." }); }
 });
