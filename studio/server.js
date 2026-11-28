@@ -3,6 +3,7 @@ const helmet = require("helmet");
 const path = require("path");
 
 const app = express();
+app.set("trust proxy", 1);
 const PORT = process.env.PORT || 3000;
 // Launch offer and conservative application-side spend ceiling.
 const FREE_VIDEO_LIMIT_PER_CUSTOMER = 2;
@@ -124,6 +125,44 @@ async function requireAccount(req) {
   return result.response.ok ? { account: result.body, session } : null;
 }
 
+async function ensureCustomerProfile(account) {
+  if (!account || !account.$id || !process.env.APPWRITE_DATABASE_ID || !process.env.APPWRITE_API_KEY) {
+    throw new Error("Customer profile configuration is incomplete.");
+  }
+  const base = appwriteBase();
+  const databaseId = encodeURIComponent(process.env.APPWRITE_DATABASE_ID);
+  const rowUrl = base + "/tablesdb/" + databaseId + "/tables/" + PROFILE_TABLE_ID + "/rows/" + encodeURIComponent(account.$id);
+  const headers = {
+    "X-Appwrite-Project": process.env.APPWRITE_PROJECT_ID,
+    "X-Appwrite-Key": process.env.APPWRITE_API_KEY,
+    "Content-Type": "application/json"
+  };
+  const existing = await fetch(rowUrl, { headers, signal: AbortSignal.timeout(10000) });
+  if (existing.ok) return true;
+  if (existing.status !== 404) {
+    throw new Error("Customer profile lookup failed with HTTP " + existing.status);
+  }
+  const created = await fetch(base + "/tablesdb/" + databaseId + "/tables/" + PROFILE_TABLE_ID + "/rows", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      rowId: account.$id,
+      data: {
+        user_id: account.$id,
+        full_name: String(account.name || "Customer").slice(0, 128),
+        email: String(account.email || "").toLowerCase(),
+        status: "pending",
+        credits: 0,
+        created_at: new Date().toISOString()
+      },
+      permissions: [`read("user:${account.$id}")`, `update("user:${account.$id}")`]
+    }),
+    signal: AbortSignal.timeout(12000)
+  });
+  if (created.ok || created.status === 409) return true;
+  throw new Error("Customer profile creation failed with HTTP " + created.status);
+}
+
 const ensureWalletTable = require("./payments").registerPaymentRoutes(app, requireAccount, appwriteBase);
 app.post("/api/auth/register", async (req, res) => {
   const name = String(req.body?.name || "").trim().slice(0, 128);
@@ -138,15 +177,10 @@ app.post("/api/auth/register", async (req, res) => {
     const login = await accountRequest("/account/sessions", { method: "POST", body: JSON.stringify({ email, password }) });
     if (!login.response.ok || !login.body.secret) return res.status(502).json({ error: "Account created. Please sign in." });
     const session = login.body.secret;
-    const profile = await fetch(appwriteBase() + "/tablesdb/" + encodeURIComponent(process.env.APPWRITE_DATABASE_ID) + "/tables/" + PROFILE_TABLE_ID + "/rows", {
-      method: "POST",
-      headers: { "X-Appwrite-Project": process.env.APPWRITE_PROJECT_ID, "X-Appwrite-Key": process.env.APPWRITE_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ rowId: created.body.$id, data: { user_id: created.body.$id, full_name: name, email, status: "pending", credits: 0, created_at: new Date().toISOString() }, permissions: [`read("user:${created.body.$id}")`, `update("user:${created.body.$id}")`] }),
-      signal: AbortSignal.timeout(12000)
-    });
-    if (!profile.ok) {
-      console.error("Customer profile row creation failed with HTTP " + profile.status);
-      return res.status(502).json({ error: "Account created, but profile setup needs attention. Please contact support." });
+    try {
+      await ensureCustomerProfile({ $id: created.body.$id, name, email });
+    } catch (profileError) {
+      console.error("Customer profile provisioning deferred: " + String(profileError.message || "unknown").slice(0, 120));
     }
     res.cookie(SESSION_COOKIE, session, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 14 * 24 * 60 * 60 * 1000 });
     return res.status(201).json({ ok: true, name });
@@ -159,6 +193,11 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const result = await accountRequest("/account/sessions", { method: "POST", body: JSON.stringify({ email, password }) });
     if (!result.response.ok || !result.body.secret) return res.status(401).json({ error: "Email or password is incorrect." });
+    try {
+      await ensureCustomerProfile(result.body);
+    } catch (profileError) {
+      console.error("Customer profile repair deferred: " + String(profileError.message || "unknown").slice(0, 120));
+    }
     res.cookie(SESSION_COOKIE, result.body.secret, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 14 * 24 * 60 * 60 * 1000 });
     return res.json({ ok: true });
   } catch (_) { return res.status(502).json({ error: "Account service temporarily unavailable." }); }
