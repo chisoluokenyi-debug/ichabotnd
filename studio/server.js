@@ -297,7 +297,6 @@ app.post("/api/auth/register", async (req, res) => {
       }
       return res.status(502).json({ error: "Your account was created. Please sign in to continue." });
     }
-    const session = login.body.secret;
     res.cookie(SESSION_COOKIE, session, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 14 * 24 * 60 * 60 * 1000 });
     // Record this browser against the account without slowing registration.
     setImmediate(() => recordTrialDevice(created.body.$id, req.ichaDeviceToken)
