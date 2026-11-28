@@ -168,8 +168,8 @@ app.post("/api/auth/register", async (req, res) => {
   const name = String(req.body?.name || "").trim().slice(0, 128);
   const email = String(req.body?.email || "").trim().toLowerCase();
   const password = String(req.body?.password || "");
-  if (!name || !/^\S+@\S+\.\S+$/.test(email) || password.length < 8) {
-    return res.status(400).json({ error: "Use a password with at least 8 characters." });
+  if (!name || !/^\S+@\S+\.\S+$/.test(email) || !password) {
+    return res.status(400).json({ error: "Enter your name, a valid email address, and a password." });
   }
   try {
     const created = await accountRequest("/account", { method: "POST", body: JSON.stringify({ userId: "unique()", name, email, password }) });
