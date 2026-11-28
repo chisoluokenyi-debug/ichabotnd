@@ -194,7 +194,7 @@ app.post("/api/auth/login", async (req, res) => {
     const result = await accountRequest("/account/sessions", { method: "POST", body: JSON.stringify({ email, password }) });
     if (!result.response.ok || !result.body.secret) return res.status(401).json({ error: "Email or password is incorrect." });
     try {
-      await ensureCustomerProfile(result.body);
+      await ensureCustomerProfile({ $id: result.body.userId, name: result.body.userName || "Customer", email: result.body.userEmail || email });
     } catch (profileError) {
       console.error("Customer profile repair deferred: " + String(profileError.message || "unknown").slice(0, 120));
     }
