@@ -270,8 +270,8 @@ function setAuthMode(mode){
  const login=authMode==="login";
  document.getElementById("auth-title").textContent=login?"Sign in to your account":"Create your account";
  document.getElementById("auth-description").textContent=login?"Enter your email address and password to access your account.":"Register to manage your ICHA AI Studio profile. Creating an account does not start AI generation or charge you.";
- authName.hidden=login;authName.disabled=login;authName.required=!login;
- document.getElementById("auth-name-label").hidden=login;
+ authName.hidden=login;authName.disabled=login;authName.required=!login;authName.style.display=login?"none":"block";
+ const nameLabel=document.getElementById("auth-name-label");nameLabel.hidden=login;nameLabel.style.display=login?"none":"block";
  document.querySelector('label[for="auth-password"]').textContent=login?"Password":"Password";
  authPassword.autocomplete=login?"current-password":"new-password";authPassword.minLength=0;
  authPassword.placeholder="Enter your password";
