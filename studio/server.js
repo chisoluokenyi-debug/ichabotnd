@@ -265,6 +265,7 @@ app.post("/api/auth/register", async (req, res) => {
     }
     const login = await accountRequest("/account/sessions/email", { method: "POST", body: JSON.stringify({ email, password }) });
     if (!login.response.ok || !login.body.secret) {
+      console.error("Appwrite registration auto-session failed: HTTP " + login.response.status + ", type=" + String(login.body.type || "unknown").slice(0, 80) + ", message=" + String(login.body.message || "No provider message").slice(0, 200));
       if (login.response.status === 429) {
         const retryAfter = login.response.headers.get("retry-after");
         if (retryAfter) res.set("Retry-After", retryAfter);
@@ -290,6 +291,7 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const result = await accountRequest("/account/sessions/email", { method: "POST", body: JSON.stringify({ email, password }) });
     if (!result.response.ok || !result.body.secret) {
+      console.error("Appwrite sign-in failed: HTTP " + result.response.status + ", type=" + String(result.body.type || "unknown").slice(0, 80) + ", message=" + String(result.body.message || "No provider message").slice(0, 200));
       if (result.response.status === 429) {
         const retryAfter = result.response.headers.get("retry-after");
         if (retryAfter) res.set("Retry-After", retryAfter);
@@ -318,8 +320,8 @@ app.post("/api/auth/forgot-password", async (req, res) => {
       return res.status(429).json({ error: "Too many requests. Please wait a little and try again." });
     }
     if (!result.response.ok) {
-      console.error("Password recovery request failed with HTTP " + result.response.status);
-      return res.status(502).json({ error: "We could not send the reset email right now. Please try again later." });
+      console.error("Appwrite password recovery failed: HTTP " + result.response.status + ", type=" + String(result.body.type || "unknown").slice(0, 80) + ", message=" + String(result.body.message || "No provider message").slice(0, 200));
+      return res.status(502).json({ error: "We could not send the reset email right now. Please check the Appwrite recovery URL settings and email configuration, then try again." });
     }
     return res.json({ ok: true, message: "If an account exists for that email, a password reset link has been sent. Check your inbox and spam folder." });
   } catch (_) { return res.status(502).json({ error: "Password reset is temporarily unavailable. Please try again later." }); }
