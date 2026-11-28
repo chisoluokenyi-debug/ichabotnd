@@ -129,6 +129,47 @@ input,select,textarea{font:inherit;max-width:100%}
 .dashboard-card small{color:#aab6ca}
 .dashboard-coming{display:inline-block;margin-top:10px;padding:5px 9px;border-radius:99px;background:#e6b75a14;color:#e9ca8d;font-size:12px}
 @media(max-width:600px){.dashboard-menu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-menu button{width:100%;font-size:13px}.dashboard-cards{grid-template-columns:1fr}}
+
+/* Professional signed-in workspace layout */
+body.is-authenticated{background:#080d18}
+body.is-authenticated #account{padding-top:24px!important;min-height:calc(100vh - 76px)}
+body.is-authenticated #account>.section-title,
+body.is-authenticated #account>.section-lead{ text-align:left;max-width:100%;margin-left:0}
+body.is-authenticated #account>.feature{max-width:1160px!important;margin:0 auto;padding:24px;background:linear-gradient(145deg,#121c30,#0d1422);border:1px solid #ffffff18;border-radius:18px;box-shadow:0 20px 55px #0004}
+body.is-authenticated #auth-message{display:none!important}
+body.is-authenticated .hero,
+body.is-authenticated #tools,
+body.is-authenticated #how,
+body.is-authenticated footer,
+body.is-authenticated nav[aria-label="Site information"]{display:none!important}
+body.is-authenticated header{position:sticky;top:0;z-index:30;background:#0a1020ee;backdrop-filter:blur(14px)}
+body.is-authenticated #site-nav{gap:18px}
+#customer-dashboard{display:grid;grid-template-columns:250px minmax(0,1fr);gap:18px;align-items:start;margin-top:22px}
+.dashboard-menu{grid-column:1;grid-row:1;display:flex;flex-direction:column;align-items:stretch;gap:7px;margin:0;padding:14px;min-height:420px;position:sticky;top:96px}
+.dashboard-menu-heading{padding:5px 9px 10px;color:#77869f;font-size:11px;font-weight:800;letter-spacing:.14em}
+.dashboard-menu button{text-align:left;width:100%;padding:12px 13px;min-height:46px}
+.dashboard-menu .dashboard-logout{margin-top:auto;padding-top:14px;border-top:1px solid #ffffff18}
+.dashboard-content{grid-column:2;grid-row:1;display:grid;gap:12px;min-width:0}
+.dashboard-panel{min-height:300px;padding:24px;border-radius:16px;background:linear-gradient(145deg,#111c30,#0c1423)}
+.dashboard-panel h3{font-size:22px;letter-spacing:-.02em}
+.dashboard-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.dashboard-card{padding:18px;border-radius:13px}
+.dashboard-menu-toggle{display:none}
+body.is-authenticated #wallet-panel{margin-top:18px}
+@media(max-width:700px){
+ body.is-authenticated #account{padding-top:14px!important}
+ body.is-authenticated #account>.feature{padding:15px;border-radius:14px}
+ #customer-dashboard{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+ .dashboard-menu-toggle{display:block;width:100%;text-align:left;padding:13px 15px;border:1px solid #ffffff24;border-radius:11px;background:#111c30;color:#f5f7ff;font-size:15px;font-weight:800}
+ .dashboard-menu{display:none;position:static;width:100%;min-height:0;margin:0;grid-column:auto;grid-row:auto}
+ .dashboard-menu.menu-open{display:flex}
+ .dashboard-menu button{font-size:14px}
+ .dashboard-menu .dashboard-logout{margin-top:12px}
+ .dashboard-content{width:100%;display:grid;gap:10px}
+ .dashboard-panel{width:100%;min-height:260px;padding:18px}
+ .dashboard-cards{grid-template-columns:1fr}
+ body.is-authenticated header.wrap{position:sticky;top:0}
+}
 \n[hidden]{display:none!important}
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://studio.tanphat.shop/#organization","name":"ICHA GLOBAL LIMITED","url":"https://studio.tanphat.shop/"},{"@type":"WebSite","@id":"https://studio.tanphat.shop/#website","url":"https://studio.tanphat.shop/","name":"ICHA AI Studio","publisher":{"@id":"https://studio.tanphat.shop/#organization"},"inLanguage":"en"}]}</script>
@@ -136,7 +177,7 @@ input,select,textarea{font:inherit;max-width:100%}
 <body>
 <header class="wrap">
   <a class="brand" href="/"><span class="mark">I</span><span>ICHA <span class="gradient">AI STUDIO</span></span></a>
-  <nav class="nav"><a class="pill" href="#account">Register</a><a class="pill" href="#account">Login</a><a href="#tools">AI tools</a><a href="#how">How it works</a></nav>
+  <nav class="nav" id="site-nav"><a class="pill" href="#account" id="header-auth-link">Get started</a><a href="#tools">AI tools</a><a href="#how">How it works</a><a href="#customer-dashboard" id="header-dashboard-link" hidden>Dashboard</a></nav>
 </header>
 <nav aria-label="Site information" style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;padding:12px 16px;border-bottom:1px solid #ffffff18;background:#0c1322;color:#c5d0e2;font-size:13px"><a href="/about.html">About</a><a href="/guides/plan-a-short-video.html">Video guide</a><a href="/guides/ethical-voiceovers.html">Voiceover guide</a><a href="/guides/mobile-video-export.html">Mobile editing guide</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/contact.html">Contact</a></nav>
 
@@ -159,12 +200,13 @@ input,select,textarea{font:inherit;max-width:100%}
           <button class="btn" type="submit" id="login-btn" hidden>Sign in</button>
           <button class="btn secondary" type="button" id="show-login-btn">Already registered? Sign in</button>
           <button class="btn secondary" type="button" id="show-register-btn" hidden>Create an account</button>
-          <button class="btn secondary" type="button" id="logout-btn" hidden>Sign out</button>
-        </div>
+          </div>
       </form>
-      <div id="account-details" hidden style="margin-top:18px;padding:14px;border:1px solid #54e3d044;border-radius:10px"></div>
+      <div id="account-details" hidden></div>
       <div id="customer-dashboard" hidden>
-        <nav class="dashboard-menu" aria-label="Your dashboard menu">
+        <button type="button" id="dashboard-menu-toggle" class="dashboard-menu-toggle" aria-expanded="false" aria-controls="dashboard-menu">☰ Menu</button>
+        <nav class="dashboard-menu" id="dashboard-menu" aria-label="Your dashboard menu">
+          <div class="dashboard-menu-heading">WORKSPACE MENU</div>
           <button type="button" data-dashboard-tab="overview" aria-current="page">⌂ Dashboard</button>
           <button type="button" data-dashboard-tab="video">▣ AI Video / Text to Video</button>
           <button type="button" data-dashboard-tab="voice">♫ Voice Studio</button>
@@ -175,6 +217,7 @@ input,select,textarea{font:inherit;max-width:100%}
           <button type="button" data-dashboard-tab="profile">♙ My Account</button>
           <button type="button" id="dashboard-logout" class="dashboard-logout">↪ Sign Out</button>
         </nav>
+        <div class="dashboard-content">
         <section class="dashboard-panel" data-dashboard-panel="overview">
           <h3>Welcome to your dashboard</h3>
           <p>Manage your ICHA AI Studio account from this menu.</p>
@@ -206,6 +249,7 @@ input,select,textarea{font:inherit;max-width:100%}
         <section class="dashboard-panel" data-dashboard-panel="profile" hidden>
           <h3>My account</h3><p id="dashboard-profile-details">Your signed-in account details.</p>
         </section>
+        </div>
       </div>
       <div id="wallet-panel" hidden style="margin-top:18px;padding:16px;border:1px solid #54e3d044;border-radius:12px">
         <h3 style="margin:0 0 8px">My wallet</h3>
@@ -260,7 +304,7 @@ const authMessage=document.getElementById("auth-message");
 const authName=document.getElementById("auth-name");
 const authPassword=document.getElementById("auth-password");
 const accountDetails=document.getElementById("account-details");
-const logoutBtn=document.getElementById("logout-btn");
+const logoutBtn=null;
 function authNotice(message,isError=false){authMessage.textContent=message;authMessage.style.color=isError?"#ffb4b4":"#a9e9d8"}
 async function authRequest(path,body){const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify(body)});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Request failed.");return data}
 let authMode="register";
@@ -292,8 +336,8 @@ document.getElementById("forgot-password-link").addEventListener("click",async e
 });
 document.getElementById("show-login-btn").addEventListener("click",()=>setAuthMode("login"));
 document.getElementById("show-register-btn").addEventListener("click",()=>setAuthMode("register"));
-document.querySelectorAll('a[href="#account"]').forEach(link=>link.addEventListener("click",()=>setAuthMode(link.textContent.trim().toLowerCase()==="login"?"login":"register")));
-async function refreshAccount(){try{const response=await fetch("/api/auth/me",{credentials:"same-origin"});const data=await response.json();if(data.authenticated){accountDetails.hidden=false;accountDetails.textContent="Signed in as "+data.user.name+" ("+data.user.email+").";document.getElementById("customer-dashboard").hidden=false;document.getElementById("dashboard-profile-details").textContent=data.user.name+" · "+data.user.email;authName.hidden=true;authPassword.hidden=true;document.getElementById("auth-email").hidden=true;document.querySelector('label[for="auth-email"]').hidden=true;document.querySelector('label[for="auth-name"]').hidden=true;document.querySelector('label[for="auth-password"]').hidden=true;document.getElementById("register-btn").hidden=true;document.getElementById("login-btn").hidden=true;document.getElementById("show-login-btn").hidden=true;document.getElementById("show-register-btn").hidden=true;document.getElementById("forgot-password-link").style.display="none";logoutBtn.hidden=false;authNotice("You are signed in.");}else{accountDetails.hidden=true;document.getElementById("customer-dashboard").hidden=true;document.getElementById("auth-email").hidden=false;document.querySelector('label[for="auth-email"]').hidden=false;authName.hidden=false;document.querySelector('label[for="auth-name"]').hidden=false;authPassword.hidden=false;document.querySelector('label[for="auth-password"]').hidden=false;logoutBtn.hidden=true;setAuthMode(authMode);}}catch(_){authNotice("Account service is temporarily unavailable.",true)}}
+document.querySelectorAll('a[href="#account"]').forEach(link=>link.addEventListener("click",()=>setAuthMode("register")));
+async function refreshAccount(){try{const response=await fetch("/api/auth/me",{credentials:"same-origin"});const data=await response.json();const dashboard=document.getElementById("customer-dashboard");const authSection=document.getElementById("account");const headerAuth=document.getElementById("header-auth-link");const headerDashboard=document.getElementById("header-dashboard-link");if(data.authenticated){accountDetails.hidden=true;dashboard.hidden=false;document.body.classList.add("is-authenticated");authSection.classList.add("is-authenticated");document.getElementById("dashboard-profile-details").textContent=data.user.name+" · "+data.user.email;authForm.hidden=true;authMessage.hidden=true;headerAuth.hidden=true;headerDashboard.hidden=false;document.getElementById("auth-title").textContent="Your workspace";document.getElementById("auth-description").textContent="Welcome back, "+data.user.name+". Choose a tool from your workspace menu.";document.getElementById("dashboard-menu").classList.remove("menu-open");document.getElementById("dashboard-menu-toggle").setAttribute("aria-expanded","false");}else{document.body.classList.remove("is-authenticated");authSection.classList.remove("is-authenticated");accountDetails.hidden=true;dashboard.hidden=true;authForm.hidden=false;authMessage.hidden=false;headerAuth.hidden=false;headerDashboard.hidden=true;setAuthMode(authMode);}}catch(_){authNotice("Account service is temporarily unavailable.",true)}}
 let authSubmitting=false;
 authForm.addEventListener("submit",async event=>{
  event.preventDefault();
@@ -325,10 +369,11 @@ authForm.addEventListener("submit",async event=>{
  }
 });
 async function performLogout(){try{await authRequest("/api/auth/logout",{});authForm.reset();authNotice("You have signed out.");await refreshAccount()}catch(error){authNotice(error.message,true)}}
-logoutBtn.addEventListener("click",performLogout);
 document.getElementById("dashboard-logout").addEventListener("click",performLogout);
+document.getElementById("dashboard-menu-toggle").addEventListener("click",()=>{const menu=document.getElementById("dashboard-menu");const open=menu.classList.toggle("menu-open");document.getElementById("dashboard-menu-toggle").setAttribute("aria-expanded",String(open));});
 document.querySelectorAll("[data-dashboard-tab]").forEach(button=>button.addEventListener("click",()=>{
  const tab=button.dataset.dashboardTab;
+ document.getElementById("dashboard-menu").classList.remove("menu-open");document.getElementById("dashboard-menu-toggle").setAttribute("aria-expanded","false");
  document.querySelectorAll("[data-dashboard-tab]").forEach(item=>item.setAttribute("aria-current",item===button?"page":"false"));
  document.querySelectorAll("[data-dashboard-panel]").forEach(panel=>{panel.hidden=panel.dataset.dashboardPanel!==tab;});
  const walletPanel=document.getElementById("wallet-panel");
