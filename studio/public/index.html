@@ -130,7 +130,7 @@ input,select,textarea{font:inherit;max-width:100%}
     <div class="feature" style="max-width:520px;margin:auto">
       <div id="auth-message" role="status" aria-live="polite" style="color:#aab6ca;margin-bottom:12px">Your account is private and protected.</div>
       <form id="auth-form">
-        <a href="#" id="forgot-password-link" hidden style="display:block;margin:-4px 0 16px;color:#70dfd0;font-size:14px">Forgot password?</a>
+        <a href="#" id="forgot-password-link" style="display:none;margin:-4px 0 16px;color:#70dfd0;font-size:14px">Forgot password?</a>
         <label for="auth-name" id="auth-name-label">Full name</label>
         <input id="auth-name" name="name" autocomplete="name" maxlength="128" placeholder="Your full name" required style="display:block;width:100%;margin:6px 0 14px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
         <label for="auth-email">Email address</label>
@@ -217,7 +217,7 @@ function setAuthMode(mode){
  document.getElementById("login-btn").hidden=!login;
  document.getElementById("show-login-btn").hidden=login;
  document.getElementById("show-register-btn").hidden=!login;
- document.getElementById("forgot-password-link").hidden=!login;
+ document.getElementById("forgot-password-link").style.display=login?"block":"none";
 }
 document.getElementById("forgot-password-link").addEventListener("click",async event=>{
  event.preventDefault();
@@ -231,7 +231,7 @@ document.getElementById("forgot-password-link").addEventListener("click",async e
 document.getElementById("show-login-btn").addEventListener("click",()=>setAuthMode("login"));
 document.getElementById("show-register-btn").addEventListener("click",()=>setAuthMode("register"));
 document.querySelectorAll('a[href="#account"]').forEach(link=>link.addEventListener("click",()=>setAuthMode(link.textContent.trim().toLowerCase()==="login"?"login":"register")));
-async function refreshAccount(){try{const response=await fetch("/api/auth/me",{credentials:"same-origin"});const data=await response.json();if(data.authenticated){accountDetails.hidden=false;accountDetails.textContent="Signed in as "+data.user.name+" ("+data.user.email+"). Your customer profile is ready.";authName.hidden=true;authPassword.hidden=true;document.querySelector('label[for="auth-name"]').hidden=true;document.querySelector('label[for="auth-password"]').hidden=true;document.getElementById("register-btn").hidden=true;document.getElementById("login-btn").hidden=true;document.getElementById("show-login-btn").hidden=true;document.getElementById("show-register-btn").hidden=true;document.getElementById("forgot-password-link").hidden=true;logoutBtn.hidden=false;authNotice("You are signed in.");}else{accountDetails.hidden=true;authPassword.hidden=false;document.querySelector('label[for="auth-password"]').hidden=false;logoutBtn.hidden=true;setAuthMode(authMode);}}catch(_){authNotice("Account service is temporarily unavailable.",true)}}
+async function refreshAccount(){try{const response=await fetch("/api/auth/me",{credentials:"same-origin"});const data=await response.json();if(data.authenticated){accountDetails.hidden=false;accountDetails.textContent="Signed in as "+data.user.name+" ("+data.user.email+"). Your customer profile is ready.";authName.hidden=true;authPassword.hidden=true;document.querySelector('label[for="auth-name"]').hidden=true;document.querySelector('label[for="auth-password"]').hidden=true;document.getElementById("register-btn").hidden=true;document.getElementById("login-btn").hidden=true;document.getElementById("show-login-btn").hidden=true;document.getElementById("show-register-btn").hidden=true;document.getElementById("forgot-password-link").style.display="none";logoutBtn.hidden=false;authNotice("You are signed in.");}else{accountDetails.hidden=true;authPassword.hidden=false;document.querySelector('label[for="auth-password"]').hidden=false;logoutBtn.hidden=true;setAuthMode(authMode);}}catch(_){authNotice("Account service is temporarily unavailable.",true)}}
 let authSubmitting=false;
 authForm.addEventListener("submit",async event=>{
  event.preventDefault();
