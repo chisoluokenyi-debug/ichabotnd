@@ -124,12 +124,12 @@ input,select,textarea{font:inherit;max-width:100%}
 
 <main>
   <section class="features wrap" id="account" style="padding-top:0">
-    <h2 class="section-title">Customer account</h2>
-    <p class="section-lead">Create an account or sign in to manage your ICHA AI Studio profile. Creating an account does not start AI generation or charge you.</p>
+    <h2 class="section-title" id="auth-title">Create your account</h2>
+    <p class="section-lead" id="auth-description">Register to manage your ICHA AI Studio profile. Creating an account does not start AI generation or charge you.</p>
     <div class="feature" style="max-width:520px;margin:auto">
       <div id="auth-message" role="status" aria-live="polite" style="color:#aab6ca;margin-bottom:12px">Your account is private and protected.</div>
       <form id="auth-form">
-        <label for="auth-name">Full name</label>
+        <label for="auth-name" id="auth-name-label">Full name</label>
         <input id="auth-name" name="name" autocomplete="name" maxlength="128" placeholder="Your full name" required style="display:block;width:100%;margin:6px 0 14px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
         <label for="auth-email">Email address</label>
         <input id="auth-email" name="email" type="email" autocomplete="email" required placeholder="you@example.com" style="display:block;width:100%;margin:6px 0 14px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
@@ -137,7 +137,9 @@ input,select,textarea{font:inherit;max-width:100%}
         <input id="auth-password" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters" style="display:block;width:100%;margin:6px 0 16px;padding:12px;border-radius:9px;border:1px solid #ffffff30;background:#0b1220;color:white">
         <div class="actions" style="justify-content:flex-start;margin-top:0">
           <button class="btn" type="submit" id="register-btn">Create account</button>
-          <button class="btn secondary" type="button" id="login-btn">Sign in</button>
+          <button class="btn" type="submit" id="login-btn" hidden>Sign in</button>
+          <button class="btn secondary" type="button" id="show-login-btn">Already registered? Sign in</button>
+          <button class="btn secondary" type="button" id="show-register-btn" hidden>Create an account</button>
           <button class="btn secondary" type="button" id="logout-btn" hidden>Sign out</button>
         </div>
       </form>
@@ -198,9 +200,27 @@ const accountDetails=document.getElementById("account-details");
 const logoutBtn=document.getElementById("logout-btn");
 function authNotice(message,isError=false){authMessage.textContent=message;authMessage.style.color=isError?"#ffb4b4":"#a9e9d8"}
 async function authRequest(path,body){const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify(body)});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Request failed.");return data}
-async function refreshAccount(){try{const response=await fetch("/api/auth/me",{credentials:"same-origin"});const data=await response.json();if(data.authenticated){accountDetails.hidden=false;accountDetails.textContent="Signed in as "+data.user.name+" ("+data.user.email+"). Your customer profile is ready.";authName.hidden=true;authPassword.hidden=true;document.querySelector('label[for="auth-name"]').hidden=true;document.querySelector('label[for="auth-password"]').hidden=true;document.getElementById("register-btn").hidden=true;document.getElementById("login-btn").hidden=true;logoutBtn.hidden=false;authNotice("You are signed in.");}else{accountDetails.hidden=true;authName.hidden=false;authPassword.hidden=false;document.querySelector('label[for="auth-name"]').hidden=false;document.querySelector('label[for="auth-password"]').hidden=false;document.getElementById("register-btn").hidden=false;document.getElementById("login-btn").hidden=false;logoutBtn.hidden=true;}}catch(_){authNotice("Account service is temporarily unavailable.",true)}}
-authForm.addEventListener("submit",async event=>{event.preventDefault();try{await authRequest("/api/auth/register",{name:authName.value,email:document.getElementById("auth-email").value,password:authPassword.value});authNotice("Account created successfully.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
-document.getElementById("login-btn").addEventListener("click",async()=>{try{await authRequest("/api/auth/login",{email:document.getElementById("auth-email").value,password:authPassword.value});authNotice("Signed in successfully.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
+let authMode="register";
+function setAuthMode(mode){
+ authMode=mode==="login"?"login":"register";
+ const login=authMode==="login";
+ document.getElementById("auth-title").textContent=login?"Sign in to your account":"Create your account";
+ document.getElementById("auth-description").textContent=login?"Enter your email address and password to access your account.":"Register to manage your ICHA AI Studio profile. Creating an account does not start AI generation or charge you.";
+ authName.hidden=login;authName.disabled=login;authName.required=!login;
+ document.getElementById("auth-name-label").hidden=login;
+ document.querySelector('label[for="auth-password"]').textContent=login?"Password":"Password (minimum 8 characters)";
+ authPassword.autocomplete=login?"current-password":"new-password";
+ authPassword.placeholder=login?"Enter your password":"At least 8 characters";
+ document.getElementById("register-btn").hidden=login;
+ document.getElementById("login-btn").hidden=!login;
+ document.getElementById("show-login-btn").hidden=login;
+ document.getElementById("show-register-btn").hidden=!login;
+}
+document.getElementById("show-login-btn").addEventListener("click",()=>setAuthMode("login"));
+document.getElementById("show-register-btn").addEventListener("click",()=>setAuthMode("register"));
+document.querySelectorAll('a[href="#account"]').forEach(link=>link.addEventListener("click",()=>setAuthMode(link.textContent.trim().toLowerCase()==="login"?"login":"register")));
+async function refreshAccount(){try{const response=await fetch("/api/auth/me",{credentials:"same-origin"});const data=await response.json();if(data.authenticated){accountDetails.hidden=false;accountDetails.textContent="Signed in as "+data.user.name+" ("+data.user.email+"). Your customer profile is ready.";authName.hidden=true;authPassword.hidden=true;document.querySelector('label[for="auth-name"]').hidden=true;document.querySelector('label[for="auth-password"]').hidden=true;document.getElementById("register-btn").hidden=true;document.getElementById("login-btn").hidden=true;document.getElementById("show-login-btn").hidden=true;document.getElementById("show-register-btn").hidden=true;logoutBtn.hidden=false;authNotice("You are signed in.");}else{accountDetails.hidden=true;authPassword.hidden=false;document.querySelector('label[for="auth-password"]').hidden=false;logoutBtn.hidden=true;setAuthMode(authMode);}}catch(_){authNotice("Account service is temporarily unavailable.",true)}}
+authForm.addEventListener("submit",async event=>{event.preventDefault();try{if(authMode==="login"){await authRequest("/api/auth/login",{email:document.getElementById("auth-email").value,password:authPassword.value});authNotice("Signed in successfully.");}else{await authRequest("/api/auth/register",{name:authName.value,email:document.getElementById("auth-email").value,password:authPassword.value});authNotice("Account created successfully.");}await refreshAccount()}catch(error){authNotice(error.message,true)}});
 logoutBtn.addEventListener("click",async()=>{try{await authRequest("/api/auth/logout",{});authForm.reset();authNotice("You have signed out.");await refreshAccount()}catch(error){authNotice(error.message,true)}});
 async function refreshWallet(){
  const panel=document.getElementById("wallet-panel");
